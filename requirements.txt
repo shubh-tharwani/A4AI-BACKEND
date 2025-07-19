@@ -1,0 +1,10 @@
+google-cloud-sdk
+fastapi
+uvicorn
+google-cloud-aiplatform
+google-cloud-speech
+firebase-admin
+pydantic
+python-dotenv
+httpx
+python-multipart
