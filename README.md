@@ -13,11 +13,31 @@
 ✅ Dockerized for Cloud Run  
 ✅ Postman Collection Included  
 
----
-
 ## Setup
 1. Create `.env` file from `.env.example`
-2. Add your Google Cloud credentials and Firebase Admin SDK key (`firebase_key.json`)
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
+
+```bash
+# Create virtual environment in the root directory
+python -m venv .venv
+
+# Activate (each new terminal)
+# macOS/Linux:
+source .venv/bin/activate
+# Windows CMD:
+.venv\Scripts\activate.bat
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+# Start the server:
+
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Stop the server:
+
+Get-Process | Where-Object {$_.ProcessName -eq "python"} | Stop-Process -Force
+
+---

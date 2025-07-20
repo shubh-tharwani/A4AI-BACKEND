@@ -4,7 +4,7 @@ from services.content_agent import generate_activity, generate_visual_aid
 
 router = APIRouter(prefix="/content", tags=["Content Agent"])
 
-@router.get("/activity", dependencies=[Depends(firebase_auth)])
+@router.get("/activity")
 def get_activity(grade: int, topic: str):
     return {"activity": generate_activity(grade, topic)}
 

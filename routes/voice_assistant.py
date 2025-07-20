@@ -16,7 +16,7 @@ async def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid authentication token")
     return user
 
-@router.post("/")
+@router.post("/speech-to-text-and-speech")
 async def handle_voice_command(file: UploadFile = File(...), user=Depends(get_current_user)):
     """
     Accepts teacher's voice input and responds with AI-generated voice + text.
