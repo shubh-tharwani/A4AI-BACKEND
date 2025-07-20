@@ -85,6 +85,36 @@ class VoiceAssistantDAO:
             logger.error(f"Failed to get conversation history for user {user_id}: {str(e)}")
             return []
     
+    async def get_user_conversations(self, user_id: str, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+        """Async version of get_conversation_history for compatibility"""
+        return self.get_conversation_history(user_id, limit, offset)
+    
+    async def get_user_conversations_count(self, user_id: str) -> int:
+        """Get total count of conversations for a user"""
+        try:
+            conversations_ref = self.db.collection(self.VOICE_CONVERSATIONS_COLLECTION)
+            query = conversations_ref.where("user_id", "==", user_id)
+            
+            # Count documents
+            count = 0
+            for _ in query.stream():
+                count += 1
+                
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to get conversation count for user {user_id}: {str(e)}")
+            return 0
+    
+    async def store_conversation(self, conversation_data: Dict[str, Any]) -> Optional[str]:
+        """Async wrapper for save_conversation"""
+        user_id = conversation_data.get("user_id")
+        if not user_id:
+            logger.error("No user_id provided in conversation_data")
+            return None
+        
+        return self.save_conversation(user_id, conversation_data)
+    
     def update_conversation_feedback(self, conversation_id: str, feedback: Dict[str, Any]) -> bool:
         """
         Update conversation with user feedback

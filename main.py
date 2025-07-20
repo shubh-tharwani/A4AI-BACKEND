@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
-from routes import education, assessment_routes, auth, personalization, activities, visual_aids, voice_unified
+from routes import education, assessment_routes, auth, personalization, activities, visual_aids, voice_consolidated
 import config
 from config import Config
 
@@ -146,7 +146,7 @@ try:
         logger.warning("Planning routes skipped - disabled for troubleshooting")
     
     app.include_router(personalization.router, prefix="/api/v1", tags=["Personalization"])
-    app.include_router(voice_unified.router, prefix="/api/v1", tags=["Voice"])
+    app.include_router(voice_consolidated.router, prefix="/api/v1/voice", tags=["Voice Assistant"])
     
     routes_loaded = 7 if PLANNING_AVAILABLE else 6
     logger.info(f"{routes_loaded} routers loaded successfully")
