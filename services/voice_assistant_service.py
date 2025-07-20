@@ -4,20 +4,20 @@ import tempfile
 import uuid
 import json
 from datetime import datetime
-from google.cloud import speech_v1p1beta1 as speech
+from google.cloud import speech
 from google.cloud import texttospeech
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
 # Add parent directory to path to import config.py from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
+from config import Config
 
 # Set Google credentials
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = config.GOOGLE_APPLICATION_CREDENTIALS
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = Config.GOOGLE_APPLICATION_CREDENTIALS
 
 # Initialize Vertex AI
-vertexai.init(project=config.PROJECT_ID, location=config.LOCATION)
+vertexai.init(project=Config.PROJECT_ID, location=Config.LOCATION)
 
 # Directory for saving generated audio files
 AUDIO_FILES_DIR = os.path.join(os.getcwd(), "temp_audio")
@@ -26,7 +26,7 @@ os.makedirs(AUDIO_FILES_DIR, exist_ok=True)
 # Initialize clients once
 speech_client = speech.SpeechClient()
 tts_client = texttospeech.TextToSpeechClient()
-model = GenerativeModel(config.GOOGLE_GEMINI_MODEL)
+model = GenerativeModel(Config.GOOGLE_GEMINI_MODEL)
 
 # Detect encoding based on extension
 def get_audio_encoding(file_extension):

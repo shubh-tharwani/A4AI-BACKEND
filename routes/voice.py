@@ -18,7 +18,7 @@ import config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/voice", tags=["Voice Processing"])
+router = APIRouter(prefix="/voice", tags=["Voice"])
 
 class TranscriptionResponse(BaseModel):
     status: str

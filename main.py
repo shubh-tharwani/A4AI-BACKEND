@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
-from routes import education, assessment_routes, voice, voice_assistant, auth
+from routes import education, assessment_routes, auth, personalization, activities, visual_aids, voice_unified
 import config
 from config import Config
 
@@ -19,6 +19,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Planning routes disabled for troubleshooting
+PLANNING_AVAILABLE = False
+logger.info("Planning routes disabled for troubleshooting")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -127,9 +131,25 @@ try:
     app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
     app.include_router(education.router, prefix="/api/v1", tags=["Education"])
     app.include_router(assessment_routes.router, prefix="/api/v1", tags=["Assessment"])
-    app.include_router(voice.router, prefix="/api/v1", tags=["Voice"])
-    app.include_router(voice_assistant.router, prefix="/api/v1", tags=["Voice Assistant"])
-    logger.info("All routers loaded successfully")
+    app.include_router(activities.router, prefix="/api/v1", tags=["Activities"])
+    app.include_router(visual_aids.router, prefix="/api/v1", tags=["Visual Aids"])
+    
+    # Planning routes disabled
+    if PLANNING_AVAILABLE:
+        try:
+            from routes import planning
+            app.include_router(planning.router, prefix="/api/v1", tags=["Planning"])
+            logger.info("Planning routes included successfully")
+        except Exception as e:
+            logger.error(f"Failed to include planning routes: {e}")
+    else:
+        logger.warning("Planning routes skipped - disabled for troubleshooting")
+    
+    app.include_router(personalization.router, prefix="/api/v1", tags=["Personalization"])
+    app.include_router(voice_unified.router, prefix="/api/v1", tags=["Voice"])
+    
+    routes_loaded = 7 if PLANNING_AVAILABLE else 6
+    logger.info(f"{routes_loaded} routers loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load routers: {str(e)}")
     raise

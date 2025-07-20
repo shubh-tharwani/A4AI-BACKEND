@@ -6,7 +6,7 @@ from vertexai.generative_models import GenerativeModel
 
 # Add parent directory to path to import config.py from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
+from config import Config
 
 # Import the new DAO layer
 from dao.assessment_dao import assessment_dao
@@ -16,8 +16,8 @@ from dao.user_dao import user_dao
 from utils.dao_error_handler import handle_service_dao_errors, ensure_document_id
 
 # Initialize Vertex AI
-vertexai.init(project=config.PROJECT_ID, location=config.LOCATION)
-model = GenerativeModel(config.GOOGLE_GEMINI_MODEL)
+vertexai.init(project=Config.PROJECT_ID, location=Config.LOCATION)
+model = GenerativeModel(Config.GOOGLE_GEMINI_MODEL)
 
 @handle_service_dao_errors("generate_quiz")
 async def generate_quiz(grade: int, topic: str, language: str, user_id: str):

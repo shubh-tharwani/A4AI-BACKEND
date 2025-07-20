@@ -226,32 +226,6 @@ async def get_conversation_history(
             detail="Failed to retrieve conversation history"
         )
 
-# Legacy endpoint for backward compatibility
-@router.post("/speech-to-text-and-speech",
-            summary="Process Voice Command (Legacy)",
-            description="Legacy endpoint for voice processing (deprecated - use POST /process)",
-            deprecated=True,
-            dependencies=[Depends(firebase_auth)])
-async def handle_voice_command_legacy(
-    file: UploadFile = File(...),
-    user_request: Request = None
-):
-    """Legacy endpoint - use POST /process instead"""
-    logger.warning("Using deprecated POST /speech-to-text-and-speech endpoint")
-    
-    response = await handle_voice_command(file, user_request)
-    
-    # Return legacy format
-    return {
-        "status": "success",
-        "data": {
-            "transcript": response.transcript,
-            "ai_response": response.ai_response,
-            "audio_file_path": response.audio_file_path,
-            "audio_filename": response.audio_filename,
-            "download_url": response.download_url
-        }
-    }
 
 @router.get("/health",
            summary="Voice Assistant Service Health Check",
