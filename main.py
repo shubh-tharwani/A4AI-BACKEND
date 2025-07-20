@@ -9,7 +9,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
-from routes import content, assessment_routes, voice, planning, voice_assistant, auth
+from routes import education, assessment_routes, voice, voice_assistant, auth
 import config
 from config import Config
 
@@ -125,11 +125,10 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 # Include routers with error handling
 try:
     app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
-    app.include_router(content.router, prefix="/api/v1", tags=["Content"])
+    app.include_router(education.router, prefix="/api/v1", tags=["Education"])
     app.include_router(assessment_routes.router, prefix="/api/v1", tags=["Assessment"])
     app.include_router(voice.router, prefix="/api/v1", tags=["Voice"])
     app.include_router(voice_assistant.router, prefix="/api/v1", tags=["Voice Assistant"])
-    app.include_router(planning.router, prefix="/api/v1", tags=["Planning"])
     logger.info("All routers loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load routers: {str(e)}")
