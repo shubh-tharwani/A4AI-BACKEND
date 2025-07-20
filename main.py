@@ -20,9 +20,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Planning routes disabled for troubleshooting
-PLANNING_AVAILABLE = False
-logger.info("Planning routes disabled for troubleshooting")
+# Planning routes enabled
+PLANNING_AVAILABLE = True
+logger.info("Planning routes enabled")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
