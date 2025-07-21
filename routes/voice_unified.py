@@ -207,11 +207,11 @@ async def voice_assistant(
 
 @router.get("/download-audio/{filename}",
            summary="Download Generated Audio",
-           description="Download AI-generated audio response file")
+           description="Download AI-generated audio response file",
+           dependencies=[Depends(firebase_auth)])
 async def download_audio_file(
     filename: str,
-    user_request: Request = None,
-    current_user: str = Depends(firebase_auth)
+    user_request: Request = None
 ):
     """
     Download AI-generated audio response

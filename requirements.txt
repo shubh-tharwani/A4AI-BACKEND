@@ -3,8 +3,7 @@ fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 
-# Google Cloud Services
-google-cloud-sdk
+# Google Cloud Services (Note: google-cloud-sdk is not a pip package)
 google-cloud-aiplatform>=1.104.0
 google-cloud-speech>=2.33.0
 google-cloud-texttospeech>=2.27.0

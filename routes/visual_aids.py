@@ -4,7 +4,7 @@ FastAPI routes for educational visual content generation and management
 """
 import logging
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field, validator
 
 from services.visual_aid_service import (
@@ -14,7 +14,7 @@ from services.visual_aid_service import (
     search_visual_aids,
     delete_visual_aid
 )
-from auth_middleware import get_current_user
+from auth_middleware import firebase_auth, get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visual-aids", tags=["Visual Aids"])
@@ -122,10 +122,10 @@ class DeleteResponse(BaseModel):
 
 # Routes
 
-@router.post("/generate", response_model=VisualAidResponse)
+@router.post("/generate", response_model=VisualAidResponse, dependencies=[Depends(firebase_auth)])
 async def create_visual_aid(
     request: VisualAidRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate educational visual aid using AI
@@ -137,7 +137,7 @@ async def create_visual_aid(
     - Classroom-ready visual aids
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         visual_aid_data = await generate_visual_aid(
             prompt=request.prompt,
@@ -157,10 +157,10 @@ async def create_visual_aid(
         raise HTTPException(status_code=500, detail="Failed to generate visual aid")
 
 
-@router.post("/infographic", response_model=InfographicResponse)
+@router.post("/infographic", response_model=InfographicResponse, dependencies=[Depends(firebase_auth)])
 async def create_infographic(
     request: InfographicRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate educational infographic with data visualization
@@ -172,7 +172,7 @@ async def create_infographic(
     - Key information highlighted clearly
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         infographic_data = await generate_educational_infographic(
             topic=request.topic,
@@ -191,12 +191,12 @@ async def create_infographic(
         raise HTTPException(status_code=500, detail="Failed to generate infographic")
 
 
-@router.get("/user/{user_id}", response_model=List[VisualAidSummary])
+@router.get("/user/{user_id}", response_model=List[VisualAidSummary], dependencies=[Depends(firebase_auth)])
 async def get_user_visual_aid_history(
     user_id: str,
+    req: Request,
     limit: int = Query(10, ge=1, le=100, description="Maximum number of visual aids to return"),
-    asset_type: Optional[str] = Query(None, description="Filter by asset type ('image' or 'video')"),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    asset_type: Optional[str] = Query(None, description="Filter by asset type ('image' or 'video')")
 ):
     """
     Get visual aid history for a specific user
@@ -209,8 +209,9 @@ async def get_user_visual_aid_history(
     """
     try:
         # Check permissions - users can view their own visual aids, teachers can view any
-        current_user_id = current_user.get("uid")
-        user_role = current_user.get("role", "student")
+        current_user_id = await get_current_user_id(req)
+        current_user_data = user_request.state.user
+        user_role = current_user_data.get("role", "student")
         
         if user_id != current_user_id and user_role not in ["teacher", "admin"]:
             raise HTTPException(status_code=403, detail="Can only view your own visual aids")
@@ -231,13 +232,13 @@ async def get_user_visual_aid_history(
         raise HTTPException(status_code=500, detail="Failed to retrieve visual aids")
 
 
-@router.get("/search", response_model=List[VisualAidSummary])
+@router.get("/search", response_model=List[VisualAidSummary], dependencies=[Depends(firebase_auth)])
 async def search_visual_aid_library(
+    req: Request,
     topic: str = Query(..., min_length=1, max_length=100, description="Topic to search for"),
     asset_type: Optional[str] = Query(None, description="Filter by asset type"),
     grade_level: Optional[int] = Query(None, ge=1, le=12, description="Filter by grade level"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum number of results"),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results")
 ):
     """
     Search the visual aid library by topic
@@ -270,10 +271,10 @@ async def search_visual_aid_library(
         raise HTTPException(status_code=500, detail="Failed to search visual aids")
 
 
-@router.delete("/{visual_aid_id}", response_model=DeleteResponse)
+@router.delete("/{visual_aid_id}", response_model=DeleteResponse, dependencies=[Depends(firebase_auth)])
 async def delete_visual_aid_endpoint(
     visual_aid_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Delete a visual aid
@@ -284,7 +285,7 @@ async def delete_visual_aid_endpoint(
     - Soft delete preserves data integrity
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         result = await delete_visual_aid(visual_aid_id, user_id)
         
@@ -301,11 +302,11 @@ async def delete_visual_aid_endpoint(
         raise HTTPException(status_code=500, detail="Failed to delete visual aid")
 
 
-@router.get("/my-visual-aids", response_model=List[VisualAidSummary])
+@router.get("/my-visual-aids", response_model=List[VisualAidSummary], dependencies=[Depends(firebase_auth)])
 async def get_my_visual_aids(
+    req: Request,
     limit: int = Query(10, ge=1, le=100, description="Maximum number of visual aids to return"),
-    asset_type: Optional[str] = Query(None, description="Filter by asset type"),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    asset_type: Optional[str] = Query(None, description="Filter by asset type")
 ):
     """
     Get visual aids for the current authenticated user
@@ -313,7 +314,7 @@ async def get_my_visual_aids(
     Convenience endpoint for users to view their own visual aid library
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         # Validate asset_type if provided
         if asset_type and asset_type not in ["image", "video"]:
@@ -330,8 +331,8 @@ async def get_my_visual_aids(
 
 # Additional utility endpoints
 
-@router.get("/categories", response_model=List[str])
-async def get_visual_aid_categories(current_user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/categories", response_model=List[str], dependencies=[Depends(firebase_auth)])
+async def get_visual_aid_categories(req: Request):
     """
     Get available visual aid categories/subjects
     
@@ -364,10 +365,10 @@ async def get_visual_aid_categories(current_user: Dict[str, Any] = Depends(get_c
         raise HTTPException(status_code=500, detail="Failed to retrieve categories")
 
 
-@router.get("/stats/{user_id}", response_model=Dict[str, Any])
+@router.get("/stats/{user_id}", response_model=Dict[str, Any], dependencies=[Depends(firebase_auth)])
 async def get_user_visual_aid_stats(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Get visual aid statistics for a user
@@ -376,8 +377,8 @@ async def get_user_visual_aid_stats(
     """
     try:
         # Check permissions
-        current_user_id = current_user.get("uid")
-        user_role = current_user.get("role", "student")
+        current_user_id = await get_current_user_id(req)
+        user_role = req.state.user.get("role", "student")
         
         if user_id != current_user_id and user_role not in ["teacher", "admin"]:
             raise HTTPException(status_code=403, detail="Can only view your own statistics")

@@ -1,0 +1,110 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Security & Credentials (CRITICAL)
+# Note: Application credentials are needed for runtime
+# vertex_ai_key*.json  # Commented out - needed for Vertex AI
+# firebase_key*.json   # Commented out - needed for Firebase
+# firestore_key*.json  # Commented out - needed for Firestore
+*.pem
+*.key
+*.crt
+.secrets/
+
+# Development & IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Testing
+.tox/
+.coverage
+.pytest_cache/
+.cache
+htmlcov/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation
+docs/_build/
+.sphinx/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/
+temp_audio/
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local development
+local_dev/
+.local/

@@ -4,7 +4,7 @@ FastAPI routes for AI-powered lesson planning, curriculum development, and educa
 """
 import logging
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from services.planning_service import (
@@ -15,7 +15,7 @@ from services.planning_service import (
     update_lesson_plan,
     delete_lesson_plan
 )
-from auth_middleware import get_current_user
+from auth_middleware import firebase_auth, get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/planning", tags=["Planning"])
@@ -202,10 +202,10 @@ class DeleteResponse(BaseModel):
 
 # Routes
 
-@router.post("/lesson-plan", response_model=LessonPlanResponse)
+@router.post("/lesson-plan", response_model=LessonPlanResponse, dependencies=[Depends(firebase_auth)])
 async def create_lesson_plan(
     request: LessonPlanRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate comprehensive AI-powered lesson plan
@@ -218,7 +218,7 @@ async def create_lesson_plan(
     - Integration with holidays and engagement data
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         lesson_plan_data = await generate_lesson_plan(
             class_id=request.class_id,
@@ -239,10 +239,10 @@ async def create_lesson_plan(
         raise HTTPException(status_code=500, detail="Failed to generate lesson plan")
 
 
-@router.post("/curriculum-plan", response_model=CurriculumPlanResponse)
+@router.post("/curriculum-plan", response_model=CurriculumPlanResponse, dependencies=[Depends(firebase_auth)])
 async def create_curriculum_plan(
     request: CurriculumPlanRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate comprehensive curriculum plan for a subject
@@ -255,7 +255,7 @@ async def create_curriculum_plan(
     - Standards alignment
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         curriculum_data = await generate_detailed_curriculum_plan(
             class_id=request.class_id,
@@ -275,10 +275,10 @@ async def create_curriculum_plan(
         raise HTTPException(status_code=500, detail="Failed to generate curriculum plan")
 
 
-@router.get("/lesson-plan/{plan_id}")
+@router.get("/lesson-plan/{plan_id}", dependencies=[Depends(firebase_auth)])
 async def get_lesson_plan_details(
     plan_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Retrieve detailed lesson plan by ID
@@ -287,7 +287,7 @@ async def get_lesson_plan_details(
     metadata, and associated resources
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         plan_data = await get_lesson_plan(plan_id, user_id)
         
@@ -301,12 +301,12 @@ async def get_lesson_plan_details(
         raise HTTPException(status_code=500, detail="Failed to retrieve lesson plan")
 
 
-@router.get("/class/{class_id}/plans", response_model=List[PlanSummary])
+@router.get("/class/{class_id}/plans", response_model=List[PlanSummary], dependencies=[Depends(firebase_auth)])
 async def get_class_plan_history(
     class_id: str,
+    req: Request,
     limit: int = Query(10, ge=1, le=100, description="Maximum number of plans to return"),
-    plan_type: Optional[str] = Query(None, description="Filter by plan type"),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    plan_type: Optional[str] = Query(None, description="Filter by plan type")
 ):
     """
     Get lesson plan history for a class
@@ -318,7 +318,7 @@ async def get_class_plan_history(
     Returns summarized list of lesson plans for the class
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         # Validate plan_type if provided
         if plan_type and plan_type not in ["daily", "weekly", "monthly", "curriculum"]:
@@ -336,11 +336,11 @@ async def get_class_plan_history(
         raise HTTPException(status_code=500, detail="Failed to retrieve class plans")
 
 
-@router.put("/lesson-plan/{plan_id}", response_model=UpdateResponse)
+@router.put("/lesson-plan/{plan_id}", response_model=UpdateResponse, dependencies=[Depends(firebase_auth)])
 async def update_lesson_plan_endpoint(
     plan_id: str,
     request: LessonPlanUpdateRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Update lesson plan
@@ -351,7 +351,7 @@ async def update_lesson_plan_endpoint(
     - Additional notes and metadata
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         # Convert request to dictionary, excluding None values
         updates = {k: v for k, v in request.dict().items() if v is not None}
@@ -374,10 +374,10 @@ async def update_lesson_plan_endpoint(
         raise HTTPException(status_code=500, detail="Failed to update lesson plan")
 
 
-@router.delete("/lesson-plan/{plan_id}", response_model=DeleteResponse)
+@router.delete("/lesson-plan/{plan_id}", response_model=DeleteResponse, dependencies=[Depends(firebase_auth)])
 async def delete_lesson_plan_endpoint(
     plan_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Delete lesson plan
@@ -388,7 +388,7 @@ async def delete_lesson_plan_endpoint(
     - Soft delete preserves data integrity
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         result = await delete_lesson_plan(plan_id, user_id)
         
@@ -405,11 +405,11 @@ async def delete_lesson_plan_endpoint(
         raise HTTPException(status_code=500, detail="Failed to delete lesson plan")
 
 
-@router.get("/my-plans", response_model=List[PlanSummary])
+@router.get("/my-plans", response_model=List[PlanSummary], dependencies=[Depends(firebase_auth)])
 async def get_my_lesson_plans(
+    req: Request,
     limit: int = Query(20, ge=1, le=100, description="Maximum number of plans to return"),
-    plan_type: Optional[str] = Query(None, description="Filter by plan type"),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    plan_type: Optional[str] = Query(None, description="Filter by plan type")
 ):
     """
     Get lesson plans created by the current user
@@ -418,7 +418,7 @@ async def get_my_lesson_plans(
     across all classes they manage
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         # Validate plan_type if provided
         if plan_type and plan_type not in ["daily", "weekly", "monthly", "curriculum"]:
@@ -437,10 +437,10 @@ async def get_my_lesson_plans(
 
 # Additional utility endpoints
 
-@router.get("/templates", response_model=List[Dict[str, Any]])
+@router.get("/templates", response_model=List[Dict[str, Any]], dependencies=[Depends(firebase_auth)])
 async def get_planning_templates(
-    category: Optional[str] = Query(None, description="Filter by category"),
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request,
+    category: Optional[str] = Query(None, description="Filter by category")
 ):
     """
     Get available lesson plan templates
@@ -478,8 +478,8 @@ async def get_planning_templates(
         raise HTTPException(status_code=500, detail="Failed to retrieve templates")
 
 
-@router.get("/subjects", response_model=List[str])
-async def get_available_subjects(current_user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/subjects", response_model=List[str], dependencies=[Depends(firebase_auth)])
+async def get_available_subjects(req: Request):
     """
     Get list of available subjects for planning
     
@@ -514,8 +514,8 @@ async def get_available_subjects(current_user: Dict[str, Any] = Depends(get_curr
         raise HTTPException(status_code=500, detail="Failed to retrieve subjects")
 
 
-@router.get("/plan-types", response_model=List[Dict[str, str]])
-async def get_plan_types(current_user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/plan-types", response_model=List[Dict[str, str]], dependencies=[Depends(firebase_auth)])
+async def get_plan_types(req: Request):
     """
     Get available lesson plan types
     
