@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
-from auth_middleware import verify_token
+from auth_middleware import firebase_auth
 from services.voice_assistant_service import process_voice_command
 from services.voice_session_service import VoiceSessionService
 from services.vertex_ai import VertexAIService
@@ -70,7 +70,7 @@ class UniversalRequest(BaseModel):
              description="Handles voice, text, and file inputs intelligently")
 async def universal_assistant(
     request: Request,
-    user_data: dict = Depends(verify_token),
+    user_data: dict = Depends(firebase_auth),
     # Optional inputs - at least one required
     audio_file: Optional[UploadFile] = File(None, description="Audio file for voice processing"),
     message: Optional[str] = Form(None, description="Text message for direct chat"),
@@ -243,7 +243,7 @@ async def universal_assistant(
              description="Convert audio to text without AI processing")
 async def transcribe_audio(
     audio_file: UploadFile = File(..., description="Audio file to transcribe"),
-    user_data: dict = Depends(verify_token)
+    user_data: dict = Depends(firebase_auth)
 ):
     """Simple speech-to-text conversion without AI response"""
     try:
@@ -268,18 +268,12 @@ async def transcribe_audio(
              description="Direct text conversation with AI")
 async def text_chat(
     request: TextRequest,
-    user_data: dict = Depends(verify_token)
+    user_data: dict = Depends(firebase_auth)
 ):
     """Direct text-to-AI conversation"""
     try:
-        # Process with session if provided
-        if request.session_id:
-            result = await voice_session_service.process_session_text_command(
-                request.message, request.user_id, request.session_id, request.context
-            )
-            ai_response = result.get("ai_response", "")
-        else:
-            ai_response = await _process_text_with_ai(request.message, request.context)
+        # Process text with AI (session context to be enhanced later)
+        ai_response = await _process_text_with_ai(request.message, request.context)
         
         response_data = {
             "status": "success",
@@ -317,11 +311,11 @@ async def text_chat(
 async def get_user_sessions(
     user_id: str,
     limit: int = 50,
-    user_data: dict = Depends(verify_token)
+    user_data: dict = Depends(firebase_auth)
 ):
     """Get all sessions for a user"""
     try:
-        sessions = await voice_dao.get_user_conversations_async(user_id, limit=limit)
+        sessions = await voice_dao.get_user_conversations(user_id, limit=limit)
         return JSONResponse(content={
             "status": "success",
             "user_id": user_id,
@@ -341,7 +335,7 @@ async def get_user_sessions(
 async def get_session(
     user_id: str,
     session_id: str,
-    user_data: dict = Depends(verify_token)
+    user_data: dict = Depends(firebase_auth)
 ):
     """Get specific session details"""
     try:
@@ -364,7 +358,7 @@ async def get_session(
                description="Delete a conversation session")
 async def delete_session(
     session_id: str,
-    user_data: dict = Depends(verify_token)
+    user_data: dict = Depends(firebase_auth)
 ):
     """Delete a conversation session"""
     try:
@@ -490,7 +484,7 @@ async def _process_text_with_ai(message: str, context: Dict[str, Any]) -> str:
         """
         
         if vertex_ai_service:
-            response = await vertex_ai_service.generate_content_async(prompt)
+            response = vertex_ai_service.generate_text(prompt)
             return response.strip()
         else:
             return f"I understand you're asking about: {message}. I'm here to help with your educational questions!"

@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 from services.vertex_ai import vertex_ai_service
 from dao.personalization_dao import personalization_dao
 from utils.dao_error_handler import handle_service_dao_errors, ensure_document_id
+from utils.firestore_serializer import firestore_to_json, safe_json_dumps
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -38,8 +39,13 @@ async def get_student_dashboard(user_id: str) -> Dict[str, Any]:
     if not performance_data:
         raise Exception(f"User performance data not found for user: {user_id}")
     
+    # Convert Firestore data to JSON-serializable format
+    performance_data = firestore_to_json(performance_data)
+    
     # Get user profile for additional context
     user_profile = personalization_dao.get_user_profile(user_id)
+    if user_profile:
+        user_profile = firestore_to_json(user_profile)
     
     # Prepare AI prompt with comprehensive context
     context_data = {
@@ -52,7 +58,7 @@ async def get_student_dashboard(user_id: str) -> Dict[str, Any]:
     Analyze the following student data and provide personalized learning recommendations:
     
     Student Data:
-    {json.dumps(context_data, indent=2)}
+    {safe_json_dumps(context_data, indent=2)}
     
     Provide a JSON response with:
     {{
@@ -124,7 +130,7 @@ async def get_student_dashboard(user_id: str) -> Dict[str, Any]:
     }
     
     logger.info(f"Successfully generated dashboard for user: {user_id}")
-    return structured_output
+    return firestore_to_json(structured_output)
 
 @handle_service_dao_errors("get_teacher_summary")
 async def get_teacher_summary(class_id: str) -> Dict[str, Any]:
@@ -150,11 +156,14 @@ async def get_teacher_summary(class_id: str) -> Dict[str, Any]:
     if not class_data:
         raise Exception(f"No student data found for class: {class_id}")
     
+    # Convert Firestore data to JSON-serializable format
+    class_data = firestore_to_json(class_data)
+    
     prompt = f"""
     Analyze this class performance data and provide teacher insights:
     
     Class Data ({len(class_data)} students):
-    {json.dumps(class_data, indent=2)}
+    {safe_json_dumps(class_data, indent=2)}
     
     Provide a JSON response with:
     {{
@@ -235,7 +244,7 @@ async def get_teacher_summary(class_id: str) -> Dict[str, Any]:
     }
     
     logger.info(f"Successfully generated teacher summary for class: {class_id}")
-    return structured_output
+    return firestore_to_json(structured_output)
 
 @handle_service_dao_errors("get_user_recommendations")
 async def get_user_recommendations(user_id: str) -> Dict[str, Any]:
@@ -268,4 +277,4 @@ async def get_user_recommendations(user_id: str) -> Dict[str, Any]:
         }
     
     logger.info(f"Retrieved existing recommendations for user: {user_id}")
-    return recommendations
+    return firestore_to_json(recommendations)

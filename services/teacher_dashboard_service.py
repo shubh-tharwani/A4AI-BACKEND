@@ -11,7 +11,7 @@ from dao.assessment_dao import assessment_dao
 from dao.content_dao import content_dao
 from dao.planning_dao import planning_dao
 from dao.voice_assistant_dao import voice_assistant_dao
-from services.vertex_ai import get_vertex_ai_client
+from services.vertex_ai import vertex_ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class TeacherDashboardService:
         self.content_dao = content_dao
         self.planning_dao = planning_dao
         self.voice_dao = voice_assistant_dao
-        self.ai_client = get_vertex_ai_client()
+        self.ai_client = vertex_ai_service
 
     async def get_teacher_complete_dashboard(self, teacher_id: str, class_id: Optional[str] = None) -> Dict[str, Any]:
         """

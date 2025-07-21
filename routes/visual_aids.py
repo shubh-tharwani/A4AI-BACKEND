@@ -210,7 +210,7 @@ async def get_user_visual_aid_history(
     try:
         # Check permissions - users can view their own visual aids, teachers can view any
         current_user_id = await get_current_user_id(req)
-        current_user_data = user_request.state.user
+        current_user_data = req.state.user
         user_role = current_user_data.get("role", "student")
         
         if user_id != current_user_id and user_role not in ["teacher", "admin"]:

@@ -239,7 +239,7 @@ async def create_lesson_plan(
         # Generate lesson plan using the service with proper parameters
         lesson_plan = await generate_lesson_plan(
             class_id=f"grade_{'-'.join(map(str, request.grades))}",
-            plan_type="custom",
+            plan_type="daily",
             duration=request.duration or 60,
             user_id=user_id,
             learning_objectives=request.learning_objectives
