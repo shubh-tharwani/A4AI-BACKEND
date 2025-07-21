@@ -148,7 +148,16 @@ try:
     app.include_router(personalization.router, prefix="/api/v1", tags=["Personalization"])
     app.include_router(voice_consolidated.router, prefix="/api/v1/voice", tags=["Voice Assistant"])
     
-    routes_loaded = 7 if PLANNING_AVAILABLE else 6
+    # Include orchestrator routes
+    try:
+        from routes.orchestrator_routes import router as orchestrator_router
+        app.include_router(orchestrator_router, prefix="/api/v1", tags=["Orchestration"])
+        logger.info("Orchestrator routes included successfully")
+        routes_loaded = 8 if PLANNING_AVAILABLE else 7
+    except Exception as e:
+        logger.error(f"Failed to include orchestrator routes: {e}")
+        routes_loaded = 7 if PLANNING_AVAILABLE else 6
+    
     logger.info(f"{routes_loaded} routers loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load routers: {str(e)}")
