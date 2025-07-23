@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass, asdict
 
 from dao.voice_assistant_dao import voice_assistant_dao
-from services.voice_assistant_service import process_voice_command as base_process_voice_command
+from services.voice_assistant_service import process_voice_command as base_process_voice_command, process_text_command
 from services.voice_assistant_service import model, tts_client, AUDIO_FILES_DIR
 from google.cloud import texttospeech
 import uuid
@@ -354,6 +354,83 @@ Summary:"""
                     user_sessions.append(session_info)
         
         return user_sessions
+    
+    async def process_session_text_command(self, text: str, user_id: str, session_id: Optional[str] = None, context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Process text command with session context and conversation history
+        
+        Args:
+            text: Text message to process
+            user_id: User identifier
+            session_id: Optional session ID for continuing conversation
+            context: Additional context data
+            
+        Returns:
+            Dict containing AI response and session information
+        """
+        try:
+            logger.info(f"Processing text command with session for user {user_id}")
+            
+            # Clean up expired sessions
+            await self._cleanup_expired_sessions()
+            
+            # Get or create session
+            session = await self._get_or_create_session(user_id, session_id)
+            
+            # Process the text with text command service (not voice command)
+            base_response = await process_text_command(text, context or {})
+            
+            # Extract AI response from base response
+            ai_response = base_response.get("ai_response", "I'm here to help with your educational needs.")
+            
+            # Enhance response with conversation context
+            enhanced_response = await self._enhance_response_with_context(
+                text, ai_response, session
+            )
+            
+            # Update session context
+            await self._update_session_context(session, text, enhanced_response)
+            
+            # Update topic if needed
+            await self._identify_conversation_topic(text, session)
+            
+            # Save session to storage
+            try:
+                session_data = {
+                    "session_id": session.session_id,
+                    "user_id": session.user_id,
+                    "transcript": text,
+                    "ai_response": enhanced_response,
+                    "context": context or {},
+                    "timestamp": datetime.now().isoformat(),
+                    "interaction_type": "text",
+                    "topic": session.topic,
+                    "total_interactions": session.total_interactions
+                }
+                await voice_assistant_dao.save_voice_session(session_data)
+            except Exception as e:
+                logger.error(f"Failed to save session: {e}")
+            
+            return {
+                "session_id": session.session_id,
+                "ai_response": enhanced_response,
+                "context_summary": session.context_summary,
+                "topic": session.topic,
+                "total_interactions": session.total_interactions,
+                "session_duration_minutes": round(session.session_duration_minutes, 2),
+                "input_type": "text",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing text command with session: {str(e)}")
+            return {
+                "session_id": session_id,
+                "ai_response": "I apologize, but I encountered an issue processing your request. Please try again.",
+                "error": str(e),
+                "input_type": "text",
+                "timestamp": datetime.now().isoformat()
+            }
 
 # Create singleton instance
 voice_session_service = VoiceSessionService()

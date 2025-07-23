@@ -5,5 +5,5 @@ cred = credentials.Certificate("firebase_key.json")
 firebase_admin.initialize_app(cred)
 
 # Test: Create a test user
-user = auth.create_user(email="test@a4ai-example.com", password="123456")
+user = auth.create_user(email="test@googlea4ai.com", password="123456")
 print(user.uid)

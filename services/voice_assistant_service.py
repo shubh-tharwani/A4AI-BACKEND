@@ -222,3 +222,87 @@ async def process_voice_command(audio_file) -> dict:
                 os.unlink(audio_path)
             except:
                 pass
+
+async def process_text_command(text: str, context: dict = None) -> dict:
+    """
+    Process text command directly without speech-to-text conversion
+    
+    Args:
+        text: The text command to process
+        context: Optional context information
+        
+    Returns:
+        dict: AI response with generated audio
+    """
+    try:
+        if not text or not text.strip():
+            return {
+                "status": "error",
+                "ai_response": "Please provide a valid text message.",
+                "error": "Empty text input"
+            }
+        
+        # --- STEP 1: Process text with AI ---
+        educational_prompt = f"""
+You are an AI assistant for teachers and educators. Respond to this message from a teacher:
+
+Teacher's message: "{text.strip()}"
+
+Context: {context if context else "Educational support"}
+
+Provide a helpful, educational response in 1-2 sentences. Be concise and supportive.
+
+Response format: {{"answer": "Your response here"}}
+"""
+        
+        try:
+            ai_response = model.generate_content(educational_prompt)
+            raw_text = ai_response.text.strip()
+            
+            # Try to parse JSON response
+            if raw_text.startswith("```"):
+                raw_text = raw_text.strip("`").replace("json", "").strip()
+            
+            try:
+                parsed_response = json.loads(raw_text)
+                response_text = parsed_response.get("answer", "").strip()
+            except json.JSONDecodeError:
+                # Fallback if model returns plain text
+                response_text = raw_text.split("\n")[0].strip()
+                
+        except Exception as e:
+            response_text = "I'm here to help with your educational needs. Please try asking your question again."
+        
+        # If still empty, return default
+        if not response_text:
+            response_text = "I'm ready to assist you with educational tasks. How can I help?"
+
+        # --- STEP 2: Convert AI Response to Speech ---
+        synthesis_input = texttospeech.SynthesisInput(text=response_text)
+        voice_params = texttospeech.VoiceSelectionParams(language_code="en-US")
+        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+
+        tts_response = tts_client.synthesize_speech(
+            input=synthesis_input, voice=voice_params, audio_config=audio_config
+        )
+
+        # Save audio file
+        unique_filename = f"response_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+        audio_output_path = os.path.join(AUDIO_FILES_DIR, unique_filename)
+        with open(audio_output_path, "wb") as out:
+            out.write(tts_response.audio_content)
+
+        return {
+            "status": "success",
+            "ai_response": response_text,
+            "audio_file_path": audio_output_path,
+            "audio_filename": unique_filename,
+            "transcript": text  # Original text input
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "ai_response": f"Sorry, I encountered an error processing your request: {str(e)}",
+            "error": str(e)
+        }
