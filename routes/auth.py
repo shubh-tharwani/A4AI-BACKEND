@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Request, Depends
-from fastapi.security import HTTPBearer
+from fastapi import APIRouter, HTTPException, Request, Depends, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, validator
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
+
+# In-memory token blacklist (for demo; use Redis/Firestore for production)
+token_blacklist = set()
 
 class LoginRequest(BaseModel):
     email: str = Field(..., description="User email address")
@@ -344,6 +347,26 @@ async def verify_auth_token(request: Request):
     except Exception as e:
         logger.error(f"Token verification error: {str(e)}")
         raise HTTPException(status_code=500, detail="Token verification service error")
+
+@router.post("/logout", summary="Sign out and invalidate token")
+async def logout(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No token provided")
+    # Add token to blacklist
+    token_blacklist.add(token)
+    return {"status": "success", "message": "Logged out. Token invalidated.", "timestamp": datetime.utcnow().isoformat()}
+
+# Auth middleware update (example, add this logic to your actual middleware)
+async def firebase_auth(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    if token in token_blacklist:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been invalidated. Please log in again.")
+    user = verify_token(token)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token")
+    request.state.user = user
+    return user
 
 @router.get("/health",
            summary="Authentication Service Health Check",

@@ -17,6 +17,28 @@ from firestore_config import get_firestore_db
 logger = logging.getLogger(__name__)
 
 class VoiceAssistantDAO:
+    async def save_voice_session(self, session_data: Dict[str, Any]) -> Optional[str]:
+        """Async method to save voice session data to Firestore"""
+        try:
+            session_ref = self.db.collection("voice_sessions").document()
+            session_data.update({
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            session_ref.set(session_data)
+            logger.info(f"Voice session saved successfully, document ID: {session_ref.id}")
+            return session_ref.id
+        except Exception as e:
+            logger.error(f"Failed to save voice session: {str(e)}")
+            return None
+
+    async def store_conversation_async(self, conversation_data: Dict[str, Any]) -> Optional[str]:
+        """Async wrapper for save_conversation for compatibility with async calls"""
+        user_id = conversation_data.get("user_id")
+        if not user_id:
+            logger.error("No user_id provided in conversation_data")
+            return None
+        return self.save_conversation(user_id, conversation_data)
     """Data Access Object for Voice Assistant-related Firestore operations"""
     
     def __init__(self):

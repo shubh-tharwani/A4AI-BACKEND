@@ -355,6 +355,23 @@ Summary:"""
         
         return user_sessions
     
+    async def get_conversation_context(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Return the conversation context for a given session_id"""
+        session = self.active_sessions.get(session_id)
+        if not session:
+            return None
+        return {
+            "session_id": session.session_id,
+            "user_id": session.user_id,
+            "topic": session.topic,
+            "context_summary": session.context_summary,
+            "conversation_history": session.conversation_history,
+            "total_interactions": session.total_interactions,
+            "created_at": session.created_at.isoformat(),
+            "last_interaction_at": session.last_interaction_at.isoformat(),
+            "session_duration_minutes": round(session.session_duration_minutes, 2)
+        }
+
     async def process_session_text_command(self, text: str, user_id: str, session_id: Optional[str] = None, context: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Process text command with session context and conversation history
