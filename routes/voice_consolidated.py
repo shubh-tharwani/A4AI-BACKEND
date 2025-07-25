@@ -564,3 +564,76 @@ async def _process_file_with_ai(file_upload: UploadFile, query: str, context: Di
             "ai_response": f"I encountered an error analyzing the file: {str(e)}",
             "analysis": {"filename": file_upload.filename if file_upload else "unknown", "error": str(e)}
         }
+
+class VoiceSessionService:
+    def __init__(self):
+        self.dao = VoiceAssistantDAO()  # Assuming you have this DAO
+        
+    async def process_session_voice_command(audio_file, user_id: str, session_id: str, context: dict):
+        """
+        Process a voice command within a session context
+        """
+        try:
+            # First process the voice command normally
+            result = await process_voice_command(audio_file)
+            
+            # Add session context
+            result['session_id'] = session_id
+            result['user_id'] = user_id
+            
+            # Store in session history if needed
+            await self.dao.store_conversation_async(
+                user_id=user_id,
+                session_id=session_id,
+                transcript=result.get('transcript', ''),
+                ai_response=result.get('ai_response', ''),
+                audio_file_path=result.get('audio_file_path'),
+                metadata={
+                    'input_type': 'voice',
+                    'context': context
+                }
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error processing voice command in session: {str(e)}")
+            raise
+    
+    async def process_session_text_command(self, message: str, user_id: str, session_id: str, context: dict):
+        """
+        Process a text command within a session context
+        """
+        try:
+            # Get conversation history for context
+            session_data = await self.get_conversation_context(user_id, session_id)
+            
+            # Enhance context with session history
+            enhanced_context = {
+                **context,
+                'session_history': session_data.get('messages', [])[-5:]  # Last 5 messages for context
+            }
+            
+            # Process text with AI
+            ai_response = await _process_text_with_ai(message, enhanced_context)
+            
+            # Store in session history
+            await self.dao.store_conversation_async(
+                user_id=user_id,
+                session_id=session_id,
+                transcript=message,
+                ai_response=ai_response,
+                metadata={
+                    'input_type': 'text',
+                    'context': context
+                }
+            )
+            
+            return {
+                'ai_response': ai_response,
+                'session_id': session_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing text command in session: {str(e)}")
+            raise

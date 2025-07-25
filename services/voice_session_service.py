@@ -151,7 +151,8 @@ class VoiceSessionService:
             logger.error(f"Error resuming session: {e}")
             return {"status": "error", "message": str(e)}
         
-    async def process_voice_with_session(self, audio_file, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    async def process_session_voice_command(self, audio_file, user_id: str, session_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        print("Processing Voice Command")
         """
         Process voice command with session context and conversation history
         
@@ -159,6 +160,7 @@ class VoiceSessionService:
             audio_file: Uploaded audio file
             user_id: User identifier
             session_id: Optional session ID for continuing conversation
+            context: Optional dictionary containing additional context
             
         Returns:
             dict: Enhanced response with session information
@@ -166,6 +168,12 @@ class VoiceSessionService:
         try:
             # Get or create session
             session = await self._get_or_create_session(user_id, session_id)
+            
+            # Add context to session metadata if provided
+            if context:
+                if not hasattr(session, 'metadata'):
+                    session.metadata = {}
+                session.metadata.update(context)
             
             # Process the voice command using base service
             base_result = await base_process_voice_command(audio_file)
