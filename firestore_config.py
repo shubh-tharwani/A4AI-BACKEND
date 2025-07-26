@@ -16,16 +16,18 @@ PROJECT_ID = os.getenv("GCP_PROJECT_ID", "a4ai-10bf3")
 DATABASE_NAME = os.getenv("FIRESTORE_DATABASE", "a4ai-db")
 FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "users_assessments")
 
-# Google Cloud credentials
-GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "./vertex_ai_key.json")
+# Google Cloud credentials - Use dedicated Firestore credentials
+GOOGLE_APPLICATION_CREDENTIALS_FIRESTORE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_FIRESTORE", "./firestore_key.json")
 
-# Set the credentials in environment if not already set
-if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_APPLICATION_CREDENTIALS
+# Set the Firestore credentials in environment for this service
+# We use a temporary environment variable to avoid conflicts with other services
+original_credentials = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_APPLICATION_CREDENTIALS_FIRESTORE
 
 try:
     # Initialize Firestore client with specific database
     logger.info(f"Initializing Firestore client with database: {DATABASE_NAME}")
+    logger.info(f"Using Firestore credentials: {GOOGLE_APPLICATION_CREDENTIALS_FIRESTORE}")
     db = firestore.Client(project=PROJECT_ID, database=DATABASE_NAME)
     logger.info(f"Firestore client initialized successfully for project: {PROJECT_ID}, database: {DATABASE_NAME}")
 except Exception as e:
@@ -34,6 +36,14 @@ except Exception as e:
     logger.info("Attempting to initialize with default database")
     db = firestore.Client(project=PROJECT_ID)
     logger.warning("Using default Firestore database due to initialization error")
+finally:
+    # Restore original credentials environment variable to avoid affecting other services
+    if original_credentials:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = original_credentials
+    else:
+        # If there were no original credentials, remove the environment variable
+        os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+    logger.info("Restored original GOOGLE_APPLICATION_CREDENTIALS environment variable")
 
 def get_firestore_db() -> firestore.Client:
     """
@@ -94,7 +104,7 @@ def log_firestore_config():
     logger.info(f"Project ID: {PROJECT_ID}")
     logger.info(f"Database Name: {DATABASE_NAME}")
     logger.info(f"Default Collection: {FIRESTORE_COLLECTION}")
-    logger.info(f"Credentials File: {GOOGLE_APPLICATION_CREDENTIALS}")
+    logger.info(f"Firestore Credentials File: {GOOGLE_APPLICATION_CREDENTIALS_FIRESTORE}")
     logger.info("===============================")
 
 # Initialize and test connection on import

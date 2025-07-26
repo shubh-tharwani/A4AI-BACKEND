@@ -4,7 +4,7 @@ FastAPI routes for interactive activities, stories, AR/VR content, and badges
 """
 import logging
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field, validator
 
 from services.activities_service import (
@@ -14,7 +14,7 @@ from services.activities_service import (
     get_user_badges,
     get_user_activities
 )
-from auth_middleware import get_current_user
+from auth_middleware import firebase_auth, get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/activities", tags=["Activities"])
@@ -141,10 +141,10 @@ class ActivitySummary(BaseModel):
 
 # Routes
 
-@router.post("/interactive-story", response_model=InteractiveStoryResponse)
+@router.post("/interactive-story", response_model=InteractiveStoryResponse, dependencies=[Depends(firebase_auth)])
 async def create_interactive_story(
     request: InteractiveStoryRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate an interactive educational story with embedded quizzes and audio
@@ -156,7 +156,7 @@ async def create_interactive_story(
     - Learning objectives and vocabulary
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         story_data = await generate_interactive_story(
             grade=request.grade,
@@ -174,10 +174,10 @@ async def create_interactive_story(
         raise HTTPException(status_code=500, detail="Failed to generate interactive story")
 
 
-@router.post("/ar-scene", response_model=ARSceneResponse)
+@router.post("/ar-scene", response_model=ARSceneResponse, dependencies=[Depends(firebase_auth)])
 async def create_ar_scene(
     request: ARSceneRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate AR/VR scene configuration for educational content
@@ -189,7 +189,7 @@ async def create_ar_scene(
     - Age-appropriate complexity
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         scene_data = await generate_ar_scene(
             topic=request.topic,
@@ -207,10 +207,10 @@ async def create_ar_scene(
         raise HTTPException(status_code=500, detail="Failed to generate AR scene")
 
 
-@router.post("/assign-badge", response_model=BadgeResponse)
+@router.post("/assign-badge", response_model=BadgeResponse, dependencies=[Depends(firebase_auth)])
 async def assign_user_badge(
     request: BadgeAssignmentRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Assign a badge to a user with tracking and metadata
@@ -223,7 +223,7 @@ async def assign_user_badge(
     """
     try:
         # Check if user has permission to assign badges (e.g., teacher role)
-        user_role = current_user.get("role", "student")
+        user_role = req.state.user.get("role", "student")
         if user_role not in ["teacher", "admin"]:
             raise HTTPException(status_code=403, detail="Insufficient permissions to assign badges")
         
@@ -243,10 +243,10 @@ async def assign_user_badge(
         raise HTTPException(status_code=500, detail="Failed to assign badge")
 
 
-@router.get("/badges/{user_id}", response_model=List[UserBadge])
+@router.get("/badges/{user_id}", response_model=List[UserBadge], dependencies=[Depends(firebase_auth)])
 async def get_user_badge_list(
     user_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Get all badges for a specific user
@@ -259,8 +259,8 @@ async def get_user_badge_list(
     """
     try:
         # Check permissions - users can view their own badges, teachers can view any
-        current_user_id = current_user.get("uid")
-        user_role = current_user.get("role", "student")
+        current_user_id = await get_current_user_id(req)
+        user_role = req.state.user.get("role", "student")
         
         if user_id != current_user_id and user_role not in ["teacher", "admin"]:
             raise HTTPException(status_code=403, detail="Can only view your own badges")
@@ -277,12 +277,12 @@ async def get_user_badge_list(
         raise HTTPException(status_code=500, detail="Failed to retrieve badges")
 
 
-@router.get("/user/{user_id}", response_model=List[ActivitySummary])
+@router.get("/user/{user_id}", response_model=List[ActivitySummary], dependencies=[Depends(firebase_auth)])
 async def get_user_activity_history(
     user_id: str,
+    req: Request,
     limit: int = 10,
-    activity_type: Optional[str] = None,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    activity_type: Optional[str] = None
 ):
     """
     Get activity history for a user
@@ -295,8 +295,8 @@ async def get_user_activity_history(
     """
     try:
         # Check permissions - users can view their own activities, teachers can view any
-        current_user_id = current_user.get("uid")
-        user_role = current_user.get("role", "student")
+        current_user_id = await get_current_user_id(req)
+        user_role = req.state.user.get("role", "student")
         
         if user_id != current_user_id and user_role not in ["teacher", "admin"]:
             raise HTTPException(status_code=403, detail="Can only view your own activities")
@@ -317,15 +317,15 @@ async def get_user_activity_history(
         raise HTTPException(status_code=500, detail="Failed to retrieve activities")
 
 
-@router.get("/my-badges", response_model=List[UserBadge])
-async def get_my_badges(current_user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/my-badges", response_model=List[UserBadge], dependencies=[Depends(firebase_auth)])
+async def get_my_badges(req: Request):
     """
     Get badges for the current authenticated user
     
     Convenience endpoint for users to view their own badges
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         badges = await get_user_badges(user_id)
         
         return [UserBadge(**badge) for badge in badges]
@@ -335,11 +335,11 @@ async def get_my_badges(current_user: Dict[str, Any] = Depends(get_current_user)
         raise HTTPException(status_code=500, detail="Failed to retrieve your badges")
 
 
-@router.get("/my-activities", response_model=List[ActivitySummary])
+@router.get("/my-activities", response_model=List[ActivitySummary], dependencies=[Depends(firebase_auth)])
 async def get_my_activities(
+    req: Request,
     limit: int = 10,
-    activity_type: Optional[str] = None,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    activity_type: Optional[str] = None
 ):
     """
     Get activity history for the current authenticated user
@@ -347,7 +347,7 @@ async def get_my_activities(
     Convenience endpoint for users to view their own activity history
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         # Validate limit
         if limit < 1 or limit > 100:

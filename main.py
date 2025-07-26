@@ -148,17 +148,40 @@ try:
     app.include_router(personalization.router, prefix="/api/v1", tags=["Personalization"])
     app.include_router(voice_consolidated.router, prefix="/api/v1/voice", tags=["Voice Assistant"])
     
+    # Include teacher dashboard routes
+    try:
+        from routes.teacher_dashboard import router as teacher_dashboard_router
+        app.include_router(teacher_dashboard_router, prefix="/api/v1", tags=["Teacher Dashboard"])
+        logger.info("Teacher dashboard routes included successfully")
+        teacher_routes_loaded = True
+    except Exception as e:
+        logger.error(f"Failed to include teacher dashboard routes: {e}")
+        teacher_routes_loaded = False
+    
     # Include orchestrator routes
     try:
         from routes.orchestrator_routes import router as orchestrator_router
         app.include_router(orchestrator_router, prefix="/api/v1", tags=["Orchestration"])
         logger.info("Orchestrator routes included successfully")
-        routes_loaded = 8 if PLANNING_AVAILABLE else 7
+        orchestrator_loaded = True
     except Exception as e:
         logger.error(f"Failed to include orchestrator routes: {e}")
-        routes_loaded = 7 if PLANNING_AVAILABLE else 6
+        orchestrator_loaded = False
+    
+    # Count loaded routes
+    base_routes = 6  # auth, education, assessment, activities, visual_aids, personalization, voice
+    routes_loaded = base_routes
+    if PLANNING_AVAILABLE:
+        routes_loaded += 1
+    if teacher_routes_loaded:
+        routes_loaded += 1
+    if orchestrator_loaded:
+        routes_loaded += 1
     
     logger.info(f"{routes_loaded} routers loaded successfully")
+except Exception as e:
+    logger.error(f"Failed to load routers: {str(e)}")
+    raise
 except Exception as e:
     logger.error(f"Failed to load routers: {str(e)}")
     raise
@@ -223,12 +246,12 @@ app.openapi = custom_openapi
 
 # Development server runner
 if __name__ == "__main__":
-    logger.info(f"Starting development server on {config.HOST}:{config.PORT}")
+    logger.info(f"Starting development server on {Config.HOST}:{Config.PORT}")
     uvicorn.run(
         "main:app",
-        host=config.HOST,
-        port=config.PORT,
-        reload=config.RELOAD,
-        log_level=config.LOG_LEVEL.lower(),
+        host=Config.HOST,
+        port=Config.PORT,
+        reload=Config.RELOAD,
+        log_level=Config.LOG_LEVEL.lower(),
         access_log=True
     )

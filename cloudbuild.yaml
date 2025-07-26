@@ -1,0 +1,51 @@
+# Google Cloud Build configuration for A4AI Backend
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/a4ai-repo/a4ai-backend:$COMMIT_SHA'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/a4ai-repo/a4ai-backend:latest'
+      - '.'
+    
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/a4ai-repo/a4ai-backend'
+    
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'a4ai-backend'
+      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/a4ai-repo/a4ai-backend:$COMMIT_SHA'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--concurrency=80'
+      - '--timeout=300'
+      - '--set-env-vars=PORT=8080,WORKERS=1,HOST=0.0.0.0'
+
+# Build options
+options:
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: '100'
+
+# Timeout for the build
+timeout: '1200s'
+
+# Substitutions
+substitutions:
+  _SERVICE_NAME: a4ai-backend
+  _REGION: us-central1

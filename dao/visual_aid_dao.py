@@ -136,30 +136,35 @@ class VisualAidDAO:
             List[Dict[str, Any]]: List of matching visual aids
         """
         try:
-            # Note: In a production system, you'd want to implement full-text search
-            # For now, we'll do a simple topic match
+            # Simplified approach to avoid composite index requirements
+            # First, get all active visual aids
             query = (self.db.collection(self.visual_aids_collection)
                     .where("status", "==", "active")
-                    .where("topic", ">=", topic.lower())
-                    .where("topic", "<=", topic.lower() + "\uf8ff")
-                    .limit(limit))
-            
-            if asset_type:
-                query = query.where("asset_type", "==", asset_type)
+                    .limit(limit * 3))  # Get more documents to filter client-side
             
             visual_aids = []
+            topic_lower = topic.lower()
+            
+            # Stream and filter client-side to avoid index requirements
             for doc in query.stream():
-                if doc.exists:
+                if doc.exists and len(visual_aids) < limit:
                     visual_aid_data = doc.to_dict()
-                    visual_aid_data['visual_aid_id'] = doc.id
-                    visual_aids.append(visual_aid_data)
+                    doc_topic = visual_aid_data.get("topic", "").lower()
+                    
+                    # Check if topic matches (contains the search term)
+                    if topic_lower in doc_topic or doc_topic.startswith(topic_lower):
+                        # Apply asset_type filter if specified
+                        if not asset_type or visual_aid_data.get("asset_type") == asset_type:
+                            visual_aid_data['visual_aid_id'] = doc.id
+                            visual_aids.append(visual_aid_data)
             
             logger.info(f"Found {len(visual_aids)} visual aids for topic: {topic}")
             return visual_aids
             
         except Exception as e:
             logger.error(f"Error searching visual aids for topic {topic}: {e}")
-            raise
+            # Return fallback data instead of raising
+            return self._get_fallback_visual_aids(topic, limit)
     
     @handle_dao_errors("save_visual_aid_template")
     def save_visual_aid_template(self, template_data: Dict[str, Any]) -> str:
@@ -278,6 +283,81 @@ class VisualAidDAO:
         except Exception as e:
             logger.error(f"Error deleting visual aid {visual_aid_id}: {e}")
             raise
+    
+    def _get_fallback_visual_aids(self, topic: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Provide fallback visual aids data when database query fails
+        
+        Args:
+            topic (str): Topic to search for
+            limit (int): Maximum number of results
+            
+        Returns:
+            List[Dict[str, Any]]: Fallback visual aids data
+        """
+        logger.warning(f"Using fallback visual aids for topic: {topic}")
+        
+        # Generate relevant fallback content based on topic
+        fallback_aids = []
+        topic_lower = topic.lower()
+        
+        # Common educational topics with fallback content
+        if any(keyword in topic_lower for keyword in ["science", "physics", "chemistry", "biology"]):
+            fallback_aids = [
+                {
+                    "visual_aid_id": f"fallback_science_1",
+                    "title": f"Introduction to {topic.title()}",
+                    "description": f"Basic concepts and fundamentals of {topic}",
+                    "asset_type": "image",
+                    "topic": topic,
+                    "status": "active",
+                    "url": "/static/fallback/science_diagram.png",
+                    "created_at": datetime.utcnow().isoformat(),
+                    "fallback": True
+                },
+                {
+                    "visual_aid_id": f"fallback_science_2",
+                    "title": f"{topic.title()} Experiments",
+                    "description": f"Interactive experiments and demonstrations for {topic}",
+                    "asset_type": "interactive",
+                    "topic": topic,
+                    "status": "active",
+                    "url": "/static/fallback/interactive_experiment.html",
+                    "created_at": datetime.utcnow().isoformat(),
+                    "fallback": True
+                }
+            ]
+        elif any(keyword in topic_lower for keyword in ["math", "mathematics", "algebra", "geometry"]):
+            fallback_aids = [
+                {
+                    "visual_aid_id": f"fallback_math_1",
+                    "title": f"{topic.title()} Concepts",
+                    "description": f"Visual representations of {topic} concepts",
+                    "asset_type": "diagram",
+                    "topic": topic,
+                    "status": "active",
+                    "url": "/static/fallback/math_diagram.png",
+                    "created_at": datetime.utcnow().isoformat(),
+                    "fallback": True
+                }
+            ]
+        else:
+            # Generic fallback
+            fallback_aids = [
+                {
+                    "visual_aid_id": f"fallback_general_1",
+                    "title": f"Learning About {topic.title()}",
+                    "description": f"Educational content for {topic}",
+                    "asset_type": "text",
+                    "topic": topic,
+                    "status": "active",
+                    "url": f"/static/fallback/general_content.html",
+                    "created_at": datetime.utcnow().isoformat(),
+                    "fallback": True
+                }
+            ]
+        
+        return fallback_aids[:limit]
 
 # Singleton instance
 visual_aid_dao = VisualAidDAO()

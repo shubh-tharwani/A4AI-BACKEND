@@ -393,5 +393,103 @@ class PlanningDAO:
             logger.error(f"Failed to delete lesson plan {lesson_plan_id}: {str(e)}")
             return False
 
+    def get_class_details(self, class_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get class details for lesson planning
+        
+        Args:
+            class_id: Class identifier
+            
+        Returns:
+            dict: Class details if found, or default structure
+        """
+        try:
+            # For now, return a default class structure since class management
+            # is not implemented yet. In a full system, this would query a classes collection
+            logger.info(f"Getting class details for class: {class_id}")
+            
+            return {
+                "class_id": class_id,
+                "name": f"Class {class_id}",
+                "grade_level": "Mixed",
+                "subject": "General",
+                "student_count": 20,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get class details for {class_id}: {str(e)}")
+            return None
+
+    def get_holidays(self, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+        """
+        Get holidays in the given date range
+        
+        Args:
+            start_date: Start date
+            end_date: End date
+            
+        Returns:
+            list: List of holidays (empty for now)
+        """
+        # Return empty list for now - in a full system this would query a holidays collection
+        logger.info(f"Getting holidays from {start_date} to {end_date}")
+        return []
+
+    def get_engagement_metrics(self, class_id: str, limit: int = 30) -> Dict[str, Any]:
+        """
+        Get engagement metrics for a class
+        
+        Args:
+            class_id: Class identifier
+            limit: Number of days to look back
+            
+        Returns:
+            dict: Engagement metrics
+        """
+        try:
+            logger.info(f"Getting engagement metrics for class: {class_id}")
+            
+            # Return default metrics - in a full system this would aggregate from various sources
+            return {
+                "average_score": 75.0,
+                "completion_rate": 85.0,
+                "participation_rate": 90.0,
+                "total_activities": 45
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get engagement metrics for {class_id}: {str(e)}")
+            return {}
+
+    def get_class_lesson_plans(self, class_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Get existing lesson plans for a class
+        
+        Args:
+            class_id: Class identifier
+            limit: Maximum number of plans to return
+            
+        Returns:
+            list: List of lesson plans
+        """
+        try:
+            # Query lesson plans for this class
+            lesson_plans_ref = self.db.collection(self.LESSON_PLANS_COLLECTION)
+            query = lesson_plans_ref.where("class_id", "==", class_id).order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
+            
+            plans = []
+            for doc in query.stream():
+                plan_data = doc.to_dict()
+                plan_data['lesson_plan_id'] = doc.id
+                plans.append(plan_data)
+            
+            logger.info(f"Found {len(plans)} existing lesson plans for class: {class_id}")
+            return plans
+            
+        except Exception as e:
+            logger.error(f"Failed to get lesson plans for class {class_id}: {str(e)}")
+            return []
+
 # Create a singleton instance
 planning_dao = PlanningDAO()

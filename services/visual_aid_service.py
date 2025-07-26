@@ -72,22 +72,36 @@ async def generate_visual_aid(
         enhanced_prompt = _enhance_prompt_for_education(prompt, grade_level, subject)
         
         # Generate visual content
-        if asset_type == "image":
-            image_data, metadata = await _generate_image(enhanced_prompt)
-            filename, public_url = cloud_storage_service.upload_image(
-                image_data=image_data,
-                content_type="image/png",
-                make_public=True
-            )
-        else:  # video
-            # For now, generate a static image as video generation is more complex
-            logger.info("Video generation requested - creating enhanced image instead")
-            image_data, metadata = await _generate_image(f"Dynamic educational illustration: {enhanced_prompt}")
-            filename, public_url = cloud_storage_service.upload_image(
-                image_data=image_data,
-                content_type="image/png",
-                make_public=True
-            )
+        try:
+            if asset_type == "image":
+                image_data, metadata = await _generate_image(enhanced_prompt)
+                try:
+                    filename, public_url = cloud_storage_service.upload_image(
+                        image_data=image_data,
+                        content_type="image/png",
+                        make_public=True
+                    )
+                except Exception as storage_error:
+                    logger.warning(f"Cloud storage upload failed, using fallback: {storage_error}")
+                    filename = f"fallback_image_{uuid.uuid4().hex[:8]}.png"
+                    public_url = "/static/placeholder_visual_aid.png"
+            else:  # video
+                # For now, generate a static image as video generation is more complex
+                logger.info("Video generation requested - creating enhanced image instead")
+                image_data, metadata = await _generate_image(f"Dynamic educational illustration: {enhanced_prompt}")
+                try:
+                    filename, public_url = cloud_storage_service.upload_image(
+                        image_data=image_data,
+                        content_type="image/png",
+                        make_public=True
+                    )
+                except Exception as storage_error:
+                    logger.warning(f"Cloud storage upload failed, using fallback: {storage_error}")
+                    filename = f"fallback_video_{uuid.uuid4().hex[:8]}.png"
+                    public_url = "/static/placeholder_visual_aid.png"
+        except Exception as gen_error:
+            logger.warning(f"Visual generation failed, using complete fallback: {gen_error}")
+            return await _create_fallback_visual_aid(prompt, asset_type, user_id)
         
         # Prepare visual aid data for database
         visual_aid_data = {
@@ -110,7 +124,7 @@ async def generate_visual_aid(
         # Prepare response
         result = {
             "visual_aid_id": visual_aid_id,
-            "status": "success",
+            "status": "success" if public_url != "/static/placeholder_visual_aid.png" else "fallback",
             "prompt": prompt,
             "enhanced_prompt": enhanced_prompt,
             "asset_type": asset_type,

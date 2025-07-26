@@ -4,7 +4,7 @@ FastAPI routes for AI-powered quiz generation, scoring, and personalized learnin
 """
 import logging
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from services.assessment_service import (
@@ -13,7 +13,7 @@ from services.assessment_service import (
     update_user_performance,
     get_personalized_recommendations
 )
-from auth_middleware import get_current_user
+from auth_middleware import firebase_auth, get_current_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/assessment", tags=["Assessment"])
@@ -38,10 +38,10 @@ class PerformanceUpdateRequest(BaseModel):
 
 # Routes
 
-@router.post("/quiz")
+@router.post("/quiz", dependencies=[Depends(firebase_auth)])
 async def create_quiz(
     request: QuizRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Generate AI-powered quiz with MCQs and open-ended questions
@@ -53,7 +53,7 @@ async def create_quiz(
     - User's learning history
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         quiz_data = await generate_quiz(
             grade=request.grade,
@@ -98,10 +98,10 @@ async def score_answer(request: ScoreRequest):
         raise HTTPException(status_code=500, detail="Failed to score answer")
 
 
-@router.post("/performance")
+@router.post("/performance", dependencies=[Depends(firebase_auth)])
 async def update_performance(
     request: PerformanceUpdateRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    req: Request
 ):
     """
     Update user performance metrics
@@ -112,7 +112,7 @@ async def update_performance(
     - Enabling personalized recommendations
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         result = await update_user_performance(
             user_id=user_id,
@@ -130,8 +130,8 @@ async def update_performance(
         raise HTTPException(status_code=500, detail="Failed to update performance")
 
 
-@router.get("/recommendations")
-async def get_recommendations(current_user: Dict[str, Any] = Depends(get_current_user)):
+@router.get("/recommendations", dependencies=[Depends(firebase_auth)])
+async def get_recommendations(req: Request):
     """
     Get personalized learning recommendations
     
@@ -142,7 +142,7 @@ async def get_recommendations(current_user: Dict[str, Any] = Depends(get_current
     - Strength areas
     """
     try:
-        user_id = current_user.get("uid")
+        user_id = await get_current_user_id(req)
         
         recommendations = await get_personalized_recommendations(user_id)
         
