@@ -3,8 +3,10 @@ Activities Routes
 FastAPI routes for interactive activities, stories, AR/VR content, and badges
 """
 import logging
+import os
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, validator
 
 from services.activities_service import (
@@ -361,3 +363,43 @@ async def get_my_activities(
     except Exception as e:
         logger.error(f"Error retrieving current user activities: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve your activities")
+
+
+@router.get("/audio/{audio_filename}")
+async def get_audio_file(audio_filename: str):
+    """
+    Serve audio files for interactive stories
+    
+    Args:
+        audio_filename (str): Name of the audio file to serve
+        
+    Returns:
+        FileResponse: Audio file for playback
+    """
+    try:
+        # Validate filename to prevent path traversal
+        if not audio_filename.endswith('.mp3') or '/' in audio_filename or '\\' in audio_filename:
+            raise HTTPException(status_code=400, detail="Invalid audio filename")
+        
+        # Construct the full path to the audio file
+        audio_dir = os.path.join(os.getcwd(), "temp_audio")
+        audio_path = os.path.join(audio_dir, audio_filename)
+        
+        # Check if file exists
+        if not os.path.exists(audio_path):
+            logger.warning(f"Audio file not found: {audio_filename}")
+            raise HTTPException(status_code=404, detail="Audio file not found")
+        
+        # Return the audio file
+        return FileResponse(
+            path=audio_path,
+            media_type="audio/mpeg",
+            filename=audio_filename,
+            headers={"Cache-Control": "public, max-age=3600"}  # Cache for 1 hour
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving audio file {audio_filename}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to serve audio file")

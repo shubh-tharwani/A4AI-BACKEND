@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 # Initialize TTS client
 tts_client = texttospeech.TextToSpeechClient()
 
-# Audio files directory configuration
-AUDIO_FILES_DIR = os.path.join(os.getcwd(), "activities_audio")
+# Audio files directory configuration (matching the audio endpoint)
+AUDIO_FILES_DIR = os.path.join(os.getcwd(), "temp_audio")
 os.makedirs(AUDIO_FILES_DIR, exist_ok=True)
 
 
@@ -150,7 +150,7 @@ async def generate_interactive_story(grade: int, topic: str, language: str, user
             raise Exception("Failed to parse story data")
 
         # Generate audio file
-        audio_filename = await _generate_story_audio(story_data["story_text"])
+        audio_filename = await _generate_story_audio(story_data["story_text"], language)
         print(f"🎵 Audio generated: {audio_filename}")
 
         # Prepare data for database storage
@@ -199,7 +199,7 @@ async def generate_interactive_story(grade: int, topic: str, language: str, user
         logger.error(error_msg, exc_info=True)
         logger.info(error_msg, exc_info=True)
         # Return fallback response
-        fallback_story = _create_fallback_story(grade, topic, language)
+        fallback_story = await _create_fallback_story(grade, topic, language)
         return fallback_story
 
 
@@ -545,19 +545,91 @@ def _parse_ar_response(response: str, topic: str, grade_level: Optional[int]) ->
         return _create_fallback_ar_data(topic, grade_level)
 
 
-async def _generate_story_audio(story_text: str) -> str:
-    """Generate audio file for story text"""
+async def _generate_story_audio(story_text: str, language: str = "English") -> str:
+    """Generate audio file for story text with language support"""
     try:
+        # Map language to TTS language codes
+        language_codes = {
+            "English": "en-US",
+            "Spanish": "es-ES", 
+            "French": "fr-FR",
+            "German": "de-DE",
+            "Italian": "it-IT",
+            "Portuguese": "pt-BR",
+            "Japanese": "ja-JP",
+            "Korean": "ko-KR",
+            "Chinese": "cmn-CN",
+            "Hindi": "hi-IN",
+            "Arabic": "ar-XA",
+            "Russian": "ru-RU",
+            "Dutch": "nl-NL",
+            "Swedish": "sv-SE",
+            "Norwegian": "no-NO",
+            "Danish": "da-DK",
+            "Finnish": "fi-FI",
+            "Turkish": "tr-TR",
+            "Polish": "pl-PL",
+            "Czech": "cs-CZ",
+            "Hungarian": "hu-HU",
+            "Romanian": "ro-RO",
+            "Bulgarian": "bg-BG",
+            "Croatian": "hr-HR",
+            "Serbian": "sr-RS",
+            "Slovak": "sk-SK",
+            "Slovenian": "sl-SI",
+            "Estonian": "et-EE",
+            "Latvian": "lv-LV",
+            "Lithuanian": "lt-LT",
+            "Greek": "el-GR",
+            "Ukrainian": "uk-UA",
+            "Thai": "th-TH",
+            "Vietnamese": "vi-VN",
+            "Indonesian": "id-ID",
+            "Malay": "ms-MY",
+            "Filipino": "fil-PH",
+            "Bengali": "bn-IN",
+            "Gujarati": "gu-IN",
+            "Kannada": "kn-IN",
+            "Malayalam": "ml-IN",
+            "Marathi": "mr-IN",
+            "Tamil": "ta-IN",
+            "Telugu": "te-IN",
+            "Urdu": "ur-IN"
+        }
+        
+        # Get language code, default to English if not found
+        language_code = language_codes.get(language, "en-US")
+        
+        # Handle text length - split into chunks if too long
+        max_bytes = 4500  # Conservative limit to stay under 5000 bytes
+        text_to_use = story_text
+        
+        # Check if text is too long (estimate bytes)
+        if len(text_to_use.encode('utf-8')) > max_bytes:
+            print(f"⚠️ Text too long ({len(text_to_use.encode('utf-8'))} bytes), truncating...")
+            # Truncate to safe length while preserving word boundaries
+            while len(text_to_use.encode('utf-8')) > max_bytes and text_to_use:
+                # Find last space before the limit
+                words = text_to_use.split()
+                if len(words) > 1:
+                    text_to_use = " ".join(words[:-1])
+                else:
+                    text_to_use = text_to_use[:max_bytes//2]  # Emergency fallback
+                    break
+            print(f"✂️ Truncated to {len(text_to_use.encode('utf-8'))} bytes")
+        
         # Prepare TTS request
-        synthesis_input = texttospeech.SynthesisInput(text=story_text[:5000])  # Limit length
+        synthesis_input = texttospeech.SynthesisInput(text=text_to_use)
         voice_params = texttospeech.VoiceSelectionParams(
-            language_code="en-US",
+            language_code=language_code,
             ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
         )
         audio_config = texttospeech.AudioConfig(
             audio_encoding=texttospeech.AudioEncoding.MP3
         )
 
+        print(f"🎙️ Generating audio for {language} ({language_code}) - {len(text_to_use)} chars")
+        
         # Generate audio
         tts_response = tts_client.synthesize_speech(
             input=synthesis_input, 
@@ -572,17 +644,108 @@ async def _generate_story_audio(story_text: str) -> str:
         with open(audio_path, "wb") as audio_file:
             audio_file.write(tts_response.audio_content)
 
-        logger.info(f"Generated audio file: {audio_filename}")
+        # Verify file was created and has content
+        if os.path.exists(audio_path):
+            file_size = os.path.getsize(audio_path)
+            print(f"✅ Audio file created: {audio_filename} ({file_size} bytes)")
+            logger.info(f"Generated audio file: {audio_filename} for language: {language} ({file_size} bytes)")
+        else:
+            print(f"❌ Audio file creation failed: {audio_filename}")
+            raise Exception(f"Audio file was not created: {audio_filename}")
+            
         return audio_filename
         
     except Exception as e:
-        error_msg = f"Error generating audio: {e}"
+        error_msg = f"Error generating audio for language {language}: {e}"
         logger.error(error_msg, exc_info=True)
         print(f"ERROR: {error_msg}")  # Also print to console for immediate visibility
-        return "audio_generation_failed.mp3"  # Return placeholder
+        
+        # Create a fallback audio file
+        return _create_fallback_audio_file(story_text, language)
 
 
-def _create_fallback_story(grade: int, topic: str, language: str = "English") -> Dict[str, Any]:
+def _create_fallback_audio_file(story_text: str, language: str = "English") -> str:
+    """Create a simple fallback audio file when TTS generation fails"""
+    try:
+        print(f"🔄 Creating fallback audio for {language}...")
+        
+        # Create a simple fallback message
+        fallback_message = f"Audio generation is currently unavailable. Please read the story text to experience the content about this topic."
+        
+        # Try a simpler TTS request with basic settings
+        synthesis_input = texttospeech.SynthesisInput(text=fallback_message)
+        voice_params = texttospeech.VoiceSelectionParams(
+            language_code="en-US",  # Use English as fallback
+            ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+
+        # Generate fallback audio
+        tts_response = tts_client.synthesize_speech(
+            input=synthesis_input, 
+            voice=voice_params, 
+            audio_config=audio_config
+        )
+
+        # Save fallback audio file
+        audio_filename = f"fallback_audio_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+        audio_path = os.path.join(AUDIO_FILES_DIR, audio_filename)
+        
+        with open(audio_path, "wb") as audio_file:
+            audio_file.write(tts_response.audio_content)
+
+        # Verify fallback file
+        if os.path.exists(audio_path):
+            file_size = os.path.getsize(audio_path)
+            print(f"✅ Fallback audio created: {audio_filename} ({file_size} bytes)")
+            logger.info(f"Generated fallback audio file: {audio_filename}")
+            return audio_filename
+        else:
+            print(f"❌ Fallback audio creation failed")
+            raise Exception("Fallback audio file was not created")
+        
+    except Exception as e:
+        # If even fallback fails, create a minimal placeholder file
+        print(f"❌ Fallback audio generation also failed: {e}")
+        logger.error(f"Fallback audio generation also failed: {e}")
+        
+        # Create a minimal silence MP3 file (placeholder)
+        audio_filename = f"silence_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+        audio_path = os.path.join(AUDIO_FILES_DIR, audio_filename)
+        
+        # Create a minimal MP3 file with just the header (represents silence)
+        # This is a very basic MP3 file that should not cause errors when served
+        minimal_mp3_data = bytes([
+            0xFF, 0xFB, 0x90, 0x00,  # MP3 frame header
+            0x00, 0x00, 0x00, 0x00,  # Padding
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00
+        ]) * 1000  # Repeat to create a small but valid file (16KB)
+        
+        try:
+            with open(audio_path, "wb") as audio_file:
+                audio_file.write(minimal_mp3_data)
+            
+            # Verify silence file
+            if os.path.exists(audio_path):
+                file_size = os.path.getsize(audio_path)
+                print(f"🔇 Created minimal placeholder audio file: {audio_filename} ({file_size} bytes)")
+                logger.info(f"Created minimal placeholder audio file: {audio_filename}")
+                return audio_filename
+            else:
+                print(f"❌ Even placeholder creation failed")
+                raise Exception("Could not create any audio file")
+                
+        except Exception as file_error:
+            print(f"❌ Failed to create even placeholder audio file: {file_error}")
+            logger.error(f"Failed to create even placeholder audio file: {file_error}")
+            # Return a filename that will trigger a 404, which is better than a server error
+            return "audio_unavailable.mp3"
+
+
+async def _create_fallback_story(grade: int, topic: str, language: str = "English") -> Dict[str, Any]:
     """Create a comprehensive fallback story when AI generation fails"""
     
     # Create a more detailed fallback story based on topic and grade
@@ -615,6 +778,13 @@ By the end of this journey, you'll have gained valuable insights into {topic} an
     else:
         trimmed_story = base_story
 
+    # Generate audio for fallback story
+    try:
+        audio_filename = await _generate_story_audio(trimmed_story, language)
+    except Exception as e:
+        logger.error(f"Failed to generate audio for fallback story: {e}")
+        audio_filename = _create_fallback_audio_file(trimmed_story, language)
+
     return {
         "story_id": str(uuid.uuid4()),
         "title": f"Discovering the World of {topic}: An Educational Adventure",
@@ -628,7 +798,7 @@ By the end of this journey, you'll have gained valuable insights into {topic} an
             f"Make connections between {topic} and other subjects"
         ],
         "vocabulary_words": [topic.lower(), "concepts", "principles", "applications", "connections", "research", "discovery", "understanding"],
-        "audio_filename": "fallback_audio.mp3",
+        "audio_filename": audio_filename,
         "grade_level": grade,
         "topic": topic,
         "language": language,
