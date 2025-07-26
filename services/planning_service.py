@@ -21,7 +21,7 @@ async def generate_lesson_plan(
     class_id: str,
     plan_type: str = "weekly",
     duration: int = 7,
-    user_id: Optional[str] = None,
+    user_id: Optional[str] = 'current user',
     curriculum_standards: Optional[List[str]] = None,
     learning_objectives: Optional[List[str]] = None
 ) -> Dict[str, Any]:

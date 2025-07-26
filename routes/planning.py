@@ -4,6 +4,7 @@ FastAPI routes for AI-powered lesson planning, curriculum development, and educa
 """
 import logging
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
@@ -28,6 +29,8 @@ class LessonPlanRequest(BaseModel):
     duration: int = Field(7, ge=1, le=365, description="Duration in days")
     curriculum_standards: Optional[List[str]] = Field(None, description="Relevant curriculum standards")
     learning_objectives: Optional[List[str]] = Field(None, description="Specific learning objectives")
+    start_time: str = Field("09:00", description="Start time for the lesson plan")
+    date: Optional[str] = Field(None, description="Date for the lesson plan")
     
     @field_validator('class_id')
     @classmethod
@@ -52,12 +55,9 @@ class LessonPlanRequest(BaseModel):
 
 
 class CurriculumPlanRequest(BaseModel):
-    class_id: str = Field(..., min_length=1, description="Class identifier")
-    subject: str = Field(..., min_length=1, description="Subject area")
-    grade_level: int = Field(..., ge=1, le=12, description="Grade level (1-12)")
-    semester_duration: int = Field(90, ge=30, le=365, description="Duration in days (default 90 days)")
-    
-    @field_validator('class_id', 'subject')
+    user_id: str = Field(..., min_length=1, description="User identifier")
+      
+    @field_validator('user_id')
     @classmethod
     def validate_strings(cls, v):
         if not v.strip():
@@ -138,7 +138,7 @@ class LessonPlanContent(BaseModel):
 class LessonPlanResponse(BaseModel):
     status: str
     plan_id: str
-    lesson_plan: LessonPlanContent
+    lesson_plan: str
     metadata: Dict[str, Any]
     class_info: Optional[Dict[str, str]] = None
 
@@ -171,9 +171,7 @@ class CurriculumPlanContent(BaseModel):
 
 class CurriculumPlanResponse(BaseModel):
     status: str
-    plan_id: str
-    curriculum_plan: CurriculumPlanContent
-    metadata: Dict[str, Any]
+    user_id: str
 
 
 class PlanSummary(BaseModel):
@@ -202,38 +200,69 @@ class DeleteResponse(BaseModel):
 
 # Routes
 
-@router.post("/lesson-plan", response_model=LessonPlanResponse, dependencies=[Depends(firebase_auth)])
+@router.post("/create-lesson-plan", response_model=LessonPlanResponse, dependencies=[Depends(firebase_auth)])
 async def create_lesson_plan(
     request: LessonPlanRequest,
     req: Request
 ):
     """
-    Generate comprehensive AI-powered lesson plan
-    
-    Creates detailed lesson plans with:
-    - Daily activity schedules
-    - Assessment strategies
-    - Resource requirements
-    - Differentiation strategies
-    - Integration with holidays and engagement data
+    Generate lesson plan using generative AI and store in DB
     """
     try:
         user_id = await get_current_user_id(req)
-        
-        lesson_plan_data = await generate_lesson_plan(
-            class_id=request.class_id,
-            plan_type=request.plan_type,
-            duration=request.duration,
-            user_id=user_id,
-            curriculum_standards=request.curriculum_standards,
-            learning_objectives=request.learning_objectives
+
+        # Build prompt from curriculum_standards, start_time, duration, learning_objectives
+        standards = ', '.join(request.curriculum_standards or [])
+        objectives = ', '.join(request.learning_objectives or [])
+        start_time=request.start_time
+        prompt = (
+            f"Create a detailed curriculum plan for the following standards: {standards}. "
+            f"Start time: {start_time}, "
+            f"Duration: {request.duration} minutes(s). "
+            f"Learning objectives: {objectives}. "
+            f"For each topic, provide a schedule with start time and duration."
+            f"don't give any output other than the mentioned information above"
+            f"The output should be in the format of json"
         )
-        
-        return LessonPlanResponse(**lesson_plan_data)
-        
-    except ValueError as e:
-        logger.warning(f"Invalid input for lesson plan generation: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+
+        # Call generative AI (Vertex AI or similar)
+        from services.vertex_ai import vertex_ai_service
+        ai_response = vertex_ai_service.generate_text(prompt)
+        ai_response=ai_response.replace("```json","")
+        ai_response=ai_response.replace("```","")
+
+        # Parse AI response (assume JSON)
+        import json
+        try:
+            lesson_plan = json.loads(ai_response)
+        except Exception as e:
+            logger.error(f"Failed to parse AI response:")
+            lesson_plan = {"plan_overview": {ai_response}}
+
+        # Store in DB
+        from dao.planning_dao import planning_dao
+        lesson_plan_data = {
+            "class_id": request.class_id,
+            "plan_type": request.plan_type,
+            "duration": request.duration,
+            "curriculum_standards": request.curriculum_standards,
+            "learning_objectives": request.learning_objectives,
+            "start_time": getattr(request, 'start_time', '09:00'),
+            "date": getattr(request, 'date', None),
+            "user_id": user_id,
+            "lesson_plan": lesson_plan,
+        }
+        plan_id = planning_dao.save_lesson_plan(user_id, lesson_plan_data)
+
+        # Response
+        return {
+            "status": "success",
+            "plan_id": plan_id or "",
+            "lesson_plan": str(lesson_plan),
+            "metadata": {"message": "Lesson plan created successfully"},
+            "class_info": {"class_id": request.class_id}
+        }
+
     except Exception as e:
         logger.error(f"Error generating lesson plan: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate lesson plan")
@@ -245,33 +274,33 @@ async def create_curriculum_plan(
     req: Request
 ):
     """
-    Generate comprehensive curriculum plan for a subject
-    
-    Creates detailed semester-long curriculum including:
-    - Unit progression and pacing
-    - Learning objectives and outcomes
-    - Assessment strategies
-    - Resource recommendations
-    - Standards alignment
+    Generate and return curriculum plan in simplified format for frontend
     """
     try:
         user_id = await get_current_user_id(req)
-        
-        curriculum_data = await generate_detailed_curriculum_plan(
-            class_id=request.class_id,
-            subject=request.subject,
-            grade_level=request.grade_level,
-            semester_duration=request.semester_duration,
+        print("User id from print: "+user_id)
+        # Get the latest curriculum plan from the database
+        from dao.planning_dao import planning_dao
+        curriculum_data = planning_dao.get_user_lesson_plans(
             user_id=user_id
         )
         
-        return CurriculumPlanResponse(**curriculum_data)
+        if not curriculum_data:
+            return {
+               "status":"Failed",
+                "user_id":user_id
+            }
+        
+        return {
+            "status":"Success",
+            "user_id":user_id
+        }
         
     except ValueError as e:
-        logger.warning(f"Invalid input for curriculum plan generation: {e}")
+        #logger.warning(f"Invalid input for curriculum plan generation: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error generating curriculum plan: {e}")
+        #logger.error(f"Error generating curriculum plan: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate curriculum plan")
 
 
