@@ -16,10 +16,13 @@ firebase-admin>=6.5.0
 # Data validation and parsing
 pydantic[email]>=2.5.0
 
+# Image processing
+Pillow>=10.0.0
+
 # Environment and configuration
 python-dotenv>=1.0.0
 
-# Image processing
+# Image processing for JPEG generation
 Pillow>=10.0.0
 
 # HTTP client

@@ -1,6 +1,6 @@
 """
 Visual Aid Service
-Handles generation of educational visual content using Vertex AI Imagen
+Handles generation of educational visual content using Vertex AI Gemini
 """
 import logging
 from typing import Dict, Any, Optional, List
@@ -8,26 +8,13 @@ from datetime import datetime
 import uuid
 
 from dao.visual_aid_dao import visual_aid_dao
-from services.vertex_ai import vertex_ai_service
-from services.cloud_storage_service import cloud_storage_service
+from services.image_generator import ImageGenerator
 from utils.dao_error_handler import handle_service_dao_errors, ensure_document_id
-from config import PROJECT_ID
 
 logger = logging.getLogger(__name__)
 
-# Image generation model initialization
-try:
-    from vertexai.generative_models import GenerativeModel
-    import vertexai
-    
-    vertexai.init(project=PROJECT_ID)
-    # Note: Imagen model is being phased out, using Gemini for image descriptions
-    # For actual image generation, consider using DALL-E via OpenAI API or other stable services
-    imagen_model = None
-    logger.info("Visual aid service initialized (using Gemini for text-based visual descriptions)")
-except Exception as e:
-    logger.warning(f"Visual aid service initialization failed: {e}")
-    imagen_model = None
+# Initialize image generator
+image_generator = ImageGenerator()
 
 
 @handle_service_dao_errors("generate_visual_aid")
@@ -71,34 +58,33 @@ async def generate_visual_aid(
         # Enhance prompt with educational context
         enhanced_prompt = _enhance_prompt_for_education(prompt, grade_level, subject)
         
-        # Generate visual content
+        # Generate visual content using the new image generator
         try:
             if asset_type == "image":
-                image_data, metadata = await _generate_image(enhanced_prompt)
-                try:
-                    filename, public_url = cloud_storage_service.upload_image(
-                        image_data=image_data,
-                        content_type="image/png",
-                        make_public=True
-                    )
-                except Exception as storage_error:
-                    logger.warning(f"Cloud storage upload failed, using fallback: {storage_error}")
-                    filename = f"fallback_image_{uuid.uuid4().hex[:8]}.png"
-                    public_url = "/static/placeholder_visual_aid.png"
+                # Use the image generator to create visual aid description
+                file_path, filename, metadata = image_generator.generate_image(
+                    content=enhanced_prompt,
+                    visual_type="illustration",
+                    topic=_extract_topic_from_prompt(prompt),
+                    subject=subject or "General",
+                    grade=str(grade_level) if grade_level else "K-12",
+                    style="educational",
+                    color_scheme="vibrant"
+                )
+                public_url = f"/temp_image/{filename}"
             else:  # video
                 # For now, generate a static image as video generation is more complex
                 logger.info("Video generation requested - creating enhanced image instead")
-                image_data, metadata = await _generate_image(f"Dynamic educational illustration: {enhanced_prompt}")
-                try:
-                    filename, public_url = cloud_storage_service.upload_image(
-                        image_data=image_data,
-                        content_type="image/png",
-                        make_public=True
-                    )
-                except Exception as storage_error:
-                    logger.warning(f"Cloud storage upload failed, using fallback: {storage_error}")
-                    filename = f"fallback_video_{uuid.uuid4().hex[:8]}.png"
-                    public_url = "/static/placeholder_visual_aid.png"
+                file_path, filename, metadata = image_generator.generate_image(
+                    content=f"Dynamic educational illustration: {enhanced_prompt}",
+                    visual_type="illustration",
+                    topic=_extract_topic_from_prompt(prompt),
+                    subject=subject or "General", 
+                    grade=str(grade_level) if grade_level else "K-12",
+                    style="dynamic",
+                    color_scheme="engaging"
+                )
+                public_url = f"/temp_image/{filename}"
         except Exception as gen_error:
             logger.warning(f"Visual generation failed, using complete fallback: {gen_error}")
             return await _create_fallback_visual_aid(prompt, asset_type, user_id)
@@ -115,7 +101,7 @@ async def generate_visual_aid(
             "grade_level": grade_level,
             "user_id": user_id,
             "metadata": metadata,
-            "generation_method": "imagen-2" if imagen_model else "fallback"
+            "generation_method": "gemini_image_generator"
         }
         
         # Save to database using DAO
@@ -124,7 +110,7 @@ async def generate_visual_aid(
         # Prepare response
         result = {
             "visual_aid_id": visual_aid_id,
-            "status": "success" if public_url != "/static/placeholder_visual_aid.png" else "fallback",
+            "status": "success",
             "prompt": prompt,
             "enhanced_prompt": enhanced_prompt,
             "asset_type": asset_type,
@@ -190,13 +176,17 @@ async def generate_educational_infographic(
         Format: Vertical infographic layout suitable for classroom display
         """
         
-        # Generate the infographic image
-        image_data, metadata = await _generate_image(infographic_prompt)
-        filename, public_url = cloud_storage_service.upload_image(
-            image_data=image_data,
-            content_type="image/png",
-            make_public=True
+        # Generate the infographic using the image generator
+        file_path, filename, metadata = image_generator.generate_image(
+            content=infographic_prompt,
+            visual_type="infographic",
+            topic=topic,
+            subject="Educational",
+            grade=str(grade_level) if grade_level else "K-12",
+            style="professional",
+            color_scheme="educational"
         )
+        public_url = f"/temp_image/{filename}"
         
         # Save infographic data
         infographic_data = {
@@ -333,14 +323,17 @@ async def delete_visual_aid(visual_aid_id: str, user_id: str) -> Dict[str, Any]:
     success = visual_aid_dao.delete_visual_aid(visual_aid_id)
     
     if success:
-        # Optionally delete from cloud storage as well
+        # Optionally delete file from local storage as well
         filename = visual_aid.get("filename")
         if filename:
             try:
-                cloud_storage_service.delete_file(f"visual_aids/{filename}")
-                logger.info(f"Deleted file from storage: {filename}")
+                import os
+                file_path = os.path.join(os.getcwd(), "temp_image", filename)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"Deleted file from local storage: {filename}")
             except Exception as e:
-                logger.warning(f"Could not delete file from storage: {e}")
+                logger.warning(f"Could not delete file from local storage: {e}")
     
     return {
         "status": "success" if success else "failed",
@@ -351,40 +344,6 @@ async def delete_visual_aid(visual_aid_id: str, user_id: str) -> Dict[str, Any]:
 
 # Helper functions
 
-async def _generate_image(prompt: str) -> tuple[bytes, Dict[str, Any]]:
-    """Generate image using stable AI services (Imagen deprecated)"""
-    try:
-        # Note: Imagen preview API has been deprecated
-        # For production, integrate with stable image generation services like:
-        # - OpenAI DALL-E
-        # - Stability AI
-        # - Other stable image generation APIs
-        
-        logger.info("Image generation using deprecated Imagen API disabled, using fallback")
-        return await _create_fallback_image(prompt)
-        
-    except Exception as e:
-        logger.error(f"Error in image generation: {e}")
-        return await _create_fallback_image(prompt)
-
-
-async def _create_fallback_image(prompt: str) -> tuple[bytes, Dict[str, Any]]:
-    """Create a fallback image when Imagen fails"""
-    # In a real implementation, you might generate a simple placeholder image
-    # For now, return empty bytes and metadata
-    logger.warning("Creating fallback image response")
-    
-    fallback_data = b"PNG_PLACEHOLDER_DATA"  # Would be actual image bytes
-    metadata = {
-        "generation_model": "fallback",
-        "prompt_length": len(prompt),
-        "image_size": len(fallback_data),
-        "generated_at": datetime.utcnow().isoformat(),
-        "fallback_reason": "Imagen model unavailable"
-    }
-    
-    return fallback_data, metadata
-
 
 async def _create_fallback_visual_aid(
     prompt: str, 
@@ -394,16 +353,31 @@ async def _create_fallback_visual_aid(
     """Create fallback visual aid when generation fails"""
     logger.warning("Creating fallback visual aid response")
     
+    # Generate a simple fallback using the image generator
+    try:
+        file_path, filename, metadata = image_generator._create_fallback_description(
+            topic=_extract_topic_from_prompt(prompt),
+            subject="General",
+            visual_type=asset_type,
+            content=prompt
+        )
+        public_url = f"/temp_image/{filename}"
+    except Exception as e:
+        logger.error(f"Even fallback generation failed: {e}")
+        filename = "placeholder.txt"
+        public_url = "/static/placeholder.png"
+        metadata = {"fallback": True}
+    
     return {
         "visual_aid_id": str(uuid.uuid4()),
         "status": "fallback",
         "prompt": prompt,
         "asset_type": asset_type,
-        "image_url": "/static/placeholder.png",
-        "filename": "placeholder.png",
+        "image_url": public_url,
+        "filename": filename,
         "topic": _extract_topic_from_prompt(prompt),
         "metadata": {
-            "fallback": True,
+            **metadata,
             "generated_at": datetime.utcnow().isoformat()
         },
         "message": "Generated fallback response due to service unavailability"

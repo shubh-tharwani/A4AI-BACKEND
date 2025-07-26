@@ -1,17 +1,41 @@
 """
-Visual Aid Routes - Fixed Version
-FastAPI routes for educational visual content generation with actual image creation
+Visual Aid Routes
+FastAPI routes for educational visual content generation using Vertex AI Gemini + Image Generation
 """
+import os
+import sys
+import json
 import logging
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-import os
-import uuid
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
-import io
+import uuid
+import vertexai
+from vertexai.generative_models import GenerativeModel
+
+# Add parent directory to path to import config.py from root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import Config
+
+# Import the DAO layer
+from dao.visual_aid_dao import visual_aid_dao
+from dao.user_dao import user_dao
+
+# Import centralized error handling
+from utils.dao_error_handler import handle_service_dao_errors, ensure_document_id
+
+# Import the new image generator
+from services.image_generator import ImageGenerator
+
+# Initialize Vertex AI
+vertexai.init(project=Config.PROJECT_ID, location=Config.LOCATION)
+model = GenerativeModel(Config.GOOGLE_GEMINI_MODEL)
+
+# Initialize image generator
+image_generator = ImageGenerator()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visual-aids", tags=["Visual Aids"])
@@ -22,9 +46,9 @@ class VisualAidRequest(BaseModel):
     topic: str = Field(..., description="Topic for the visual aid")
     grade: str = Field(..., description="Grade level")
     subject: str = Field(..., description="Subject area")
-    visualType: str = Field(default="infographic", description="Type of visual aid")
-    style: Optional[str] = Field(default="modern", description="Visual style")
-    color_scheme: Optional[str] = Field(default="blue", description="Color scheme")
+    visualType: str = Field(default="infographic", description="Type of visual aid (infographic, illustration, diagram, chart, mind_map, timeline)")
+    style: Optional[str] = Field(default="modern", description="Visual style (modern, classic, creative, professional)")
+    color_scheme: Optional[str] = Field(default="blue", description="Color scheme (blue, green, purple, orange, teal)")
 
 
 class InfographicRequest(BaseModel):
@@ -41,34 +65,224 @@ class VisualAidResponse(BaseModel):
     data: Optional[dict] = None
 
 
+# Helper function to generate context-specific prompts based on visual type
+def get_visual_type_context(visual_type: str, topic: str, subject: str, grade: str) -> str:
+    """Generate context-specific prompts based on visual type"""
+    
+    base_context = f"Create educational content for {subject} topic '{topic}' suitable for grade {grade} students."
+    
+    visual_contexts = {
+        "infographic": f"""
+        {base_context}
+        Create a comprehensive educational infographic with:
+        - Clear hierarchical information layout with distinct sections
+        - Statistical data visualization and infographic elements
+        - Icons, charts, and visual data representations
+        - Flowing narrative structure with logical progression
+        - Key facts, statistics, and educational insights
+        - Visual metaphors and educational symbols
+        - Step-by-step information flow
+        """,
+        
+        "illustration": f"""
+        {base_context}
+        Create detailed educational illustrations with:
+        - Artistic visual representations and detailed imagery
+        - Educational metaphors and symbolic elements
+        - Annotated diagrams with explanatory callouts
+        - Engaging, memorable visual storytelling elements
+        - Character-based explanations where appropriate
+        - Rich visual details that support learning
+        - Creative artistic elements that enhance understanding
+        """,
+        
+        "diagram": f"""
+        {base_context}
+        Create educational diagrams with:
+        - Process flows, connections, and systematic relationships
+        - Arrows, connecting lines, and step-by-step progression
+        - Labeled components and functional elements
+        - Clear cause-and-effect or sequential relationships
+        - Technical accuracy with proper terminology
+        - Logical flow from concept to application
+        - Visual representation of abstract concepts
+        """,
+        
+        "chart": f"""
+        {base_context}
+        Create educational charts with:
+        - Proper data visualization with charts and graphs
+        - Clear axes, labels, and legends for data interpretation
+        - Statistical insights and trend analysis
+        - Data context and educational significance
+        - Comparative analysis where relevant
+        - Visual representation of numerical relationships
+        - Educational interpretation of data patterns
+        """,
+        
+        "mind_map": f"""
+        {base_context}
+        Create educational mind maps with:
+        - Central topic with branching concept relationships
+        - Hierarchical information structure with clear connections
+        - Color-coded categories and visual groupings
+        - Conceptual relationships and knowledge mapping
+        - Interconnected ideas and sub-topics
+        - Visual organization of complex information
+        - Learning pathway visualization
+        """,
+        
+        "timeline": f"""
+        {base_context}
+        Create educational timelines with:
+        - Chronological sequence with clear time progression
+        - Date markers, periods, and historical context
+        - Milestone events with descriptive details
+        - Temporal relationships and historical significance
+        - Cause-and-effect relationships over time
+        - Visual representation of historical progression
+        - Educational context for each time period
+        """
+    }
+    
+    return visual_contexts.get(visual_type.lower(), visual_contexts["infographic"])
+
+
+@handle_service_dao_errors("generate_visual_aid_content")
+async def generate_visual_aid_content(request: VisualAidRequest, user_id: str = None) -> Dict[str, Any]:
+    """Generate educational visual aid content using Vertex AI Gemini + create actual image"""
+    try:
+        # Get visual type specific context
+        visual_context = get_visual_type_context(request.visualType, request.topic, request.subject, request.grade)
+        
+        # Create comprehensive prompt for Gemini
+        prompt = f"""
+        {visual_context}
+        
+        Additional Requirements:
+        - Visual Style: {request.style}
+        - Color Scheme: {request.color_scheme}
+        - Educational Level: Grade {request.grade}
+        - Subject Focus: {request.subject}
+        
+        Please provide:
+        1. TITLE: A compelling title for the visual aid
+        2. STRUCTURE: Detailed structure and layout description
+        3. CONTENT: Complete educational content organized by sections
+        4. VISUAL_ELEMENTS: Specific visual elements to include
+        5. COLOR_GUIDANCE: How to apply the {request.color_scheme} color scheme
+        6. EDUCATIONAL_OBJECTIVES: Learning objectives this visual aid supports
+        
+        Format the response as a structured educational content that can be used to create the visual aid.
+        """
+        
+        # Generate content using Gemini
+        response = model.generate_content(prompt)
+        generated_content = response.text
+        
+        # Generate actual image using the content
+        logger.info(f"Generating actual image for {request.visualType}: {request.topic}")
+        file_path, filename, image_metadata = image_generator.generate_image(
+            content=generated_content,
+            visual_type=request.visualType,
+            topic=request.topic,
+            subject=request.subject,
+            grade=request.grade,
+            style=request.style,
+            color_scheme=request.color_scheme
+        )
+        
+        # Create comprehensive metadata with expected structure
+        metadata = {
+            "visual_type": request.visualType,
+            "subject": request.subject,
+            "grade_level": request.grade,
+            "style": request.style,
+            "color_scheme": request.color_scheme,
+            "generated_at": datetime.now().isoformat(),
+            "generation_method": "gemini_ai_with_mermaid",
+            "content_length": len(generated_content),
+            "prompt_type": f"{request.visualType}_specific",
+            "image_metadata": {
+                "size": image_metadata.get("size", 0),
+                "dimensions": "scalable",  # Mermaid diagrams are scalable
+                "format": image_metadata.get("format", "Mermaid"),
+                "content_type": image_metadata.get("content_type", "text/mermaid"),
+                "can_render": image_metadata.get("can_render", True),
+                "filename": image_metadata.get("filename", filename)
+            },
+            "has_downloadable_image": True
+        }
+        
+        # Save to database using DAO
+        visual_aid_data = {
+            "topic": request.topic,
+            "subject": request.subject,
+            "grade_level": request.grade,
+            "visual_type": request.visualType,
+            "style": request.style,
+            "color_scheme": request.color_scheme,
+            "content": generated_content,
+            "image_filename": filename,
+            "image_path": file_path,
+            "user_id": user_id,
+            "metadata": metadata,
+            "status": "completed"
+        }
+        
+        visual_aid_id = visual_aid_dao.save_visual_aid(visual_aid_data)
+        
+        return {
+            "id": visual_aid_id,
+            "title": f"{request.subject}: {request.topic}",
+            "content": generated_content,
+            "visual_type": request.visualType,
+            "image_filename": filename,
+            "image_path": file_path,
+            "metadata": metadata,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating visual aid content: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate visual aid: {str(e)}")
+
+
 # Visual Aid Generation Routes
 @router.post("/generate")
 async def generate_visual_aid(request: VisualAidRequest):
-    """Generate a visual aid with actual image content"""
+    """Generate a visual aid using Vertex AI Gemini"""
     try:
-        logger.info(f"Generating visual aid for topic: {request.topic}")
+        logger.info(f"Generating visual aid for topic: {request.topic}, type: {request.visualType}")
         
-        # Generate the actual image
-        image_data = create_visual_aid_image(request)
-        
-        # Save the image and get metadata
-        image_info = save_visual_aid_image(image_data, request)
+        # Generate content using Gemini
+        result = await generate_visual_aid_content(request)
         
         return JSONResponse({
             "success": True,
             "message": "Visual aid generated successfully",
             "data": {
-                "id": image_info["id"],
-                "image_url": image_info["image_url"], 
-                "filename": image_info["filename"],
+                "id": result["id"],
+                "title": result["title"],
+                "content": result["content"],
+                "visual_type": result["visual_type"],
+                "image_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/image",  # Backend image URL
+                "image_filename": result["image_filename"],
+                "download_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/download",  # Backend download endpoint
+                "preview_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/preview",  # Backend preview endpoint
+                "content_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/content",  # Backend content endpoint
                 "metadata": {
                     "topic": request.topic,
                     "grade": request.grade,
                     "subject": request.subject,
                     "visual_type": request.visualType,
-                    "image_size": image_info["size"],
-                    "created_at": image_info["created_at"],
-                    "dimensions": image_info["dimensions"]
+                    "style": request.style,
+                    "color_scheme": request.color_scheme,
+                    "created_at": result["metadata"]["generated_at"],
+                    "generation_method": result["metadata"]["generation_method"],
+                    "has_downloadable_image": result["metadata"]["has_downloadable_image"],
+                    "image_size": result["metadata"]["image_metadata"]["size"],
+                    "image_dimensions": result["metadata"]["image_metadata"]["dimensions"]
                 }
             }
         })
@@ -80,7 +294,7 @@ async def generate_visual_aid(request: VisualAidRequest):
 
 @router.post("/infographic")
 async def create_infographic(request: InfographicRequest):
-    """Create an infographic with actual image content"""
+    """Create an infographic using Vertex AI Gemini"""
     try:
         logger.info(f"Creating infographic for: {request.topic}")
         
@@ -90,28 +304,34 @@ async def create_infographic(request: InfographicRequest):
             grade=request.grade,
             subject=request.subject,
             visualType="infographic",
-            style=request.style
+            style=request.style or "modern"
         )
         
-        # Generate infographic
-        image_data = create_infographic_image(visual_request)
-        image_info = save_visual_aid_image(image_data, visual_request, "infographic")
+        # Generate infographic content using Gemini
+        result = await generate_visual_aid_content(visual_request)
         
         return JSONResponse({
             "success": True,
             "message": "Infographic created successfully",
             "data": {
-                "id": image_info["id"],
-                "image_url": image_info["image_url"],
-                "filename": image_info["filename"],
+                "id": result["id"],
+                "title": result["title"],
+                "content": result["content"],
+                "visual_type": "infographic",
+                "image_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/image",  # Backend image URL
+                "image_filename": result["image_filename"],
+                "download_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/download",  # Backend download endpoint
+                "preview_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/preview",  # Backend preview endpoint
+                "content_url": f"http://localhost:8000/api/v1/visual-aids/{result['id']}/content",  # Backend content endpoint
                 "metadata": {
                     "topic": request.topic,
                     "grade": request.grade,
                     "subject": request.subject,
                     "visual_type": "infographic",
-                    "image_size": image_info["size"],
-                    "created_at": image_info["created_at"],
-                    "dimensions": image_info["dimensions"]
+                    "style": request.style,
+                    "created_at": result["metadata"]["generated_at"],
+                    "generation_method": result["metadata"]["generation_method"],
+                    "has_downloadable_image": result["metadata"]["has_downloadable_image"]
                 }
             }
         })
@@ -122,31 +342,37 @@ async def create_infographic(request: InfographicRequest):
 
 
 @router.get("/my-visual-aids")
-async def get_user_visual_aids():
-    """Get list of generated visual aids"""
+async def get_user_visual_aids(user_id: str = None):
+    """Get list of generated visual aids for a user"""
     try:
-        # Get list of generated visual aids
-        visual_aids_dir = os.path.join(os.getcwd(), "uploads", "visual_aids")
-        visual_aids = []
+        # Get visual aids from database using DAO
+        visual_aids = visual_aid_dao.get_user_visual_aids(user_id or "default_user")
         
-        if os.path.exists(visual_aids_dir):
-            for filename in os.listdir(visual_aids_dir):
-                if filename.endswith(('.png', '.jpg', '.jpeg')):
-                    file_path = os.path.join(visual_aids_dir, filename)
-                    file_stat = os.stat(file_path)
-                    
-                    visual_aids.append({
-                        "id": filename.split('.')[0],
-                        "filename": filename,
-                        "image_url": f"http://localhost:8000/uploads/visual_aids/{filename}",
-                        "size": file_stat.st_size,
-                        "created_at": datetime.fromtimestamp(file_stat.st_ctime).isoformat()
-                    })
+        # Format response
+        formatted_aids = []
+        for aid in visual_aids:
+            formatted_aids.append({
+                "id": aid.get("id"),
+                "title": f"{aid.get('subject', 'General')}: {aid.get('topic', 'Visual Aid')}",
+                "topic": aid.get("topic"),
+                "subject": aid.get("subject"),
+                "grade": aid.get("grade_level"),
+                "visual_type": aid.get("visual_type"),
+                "style": aid.get("style"),
+                "color_scheme": aid.get("color_scheme"),
+                "image_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/image",  # Backend image URL
+                "download_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/download",  # Backend download URL
+                "preview_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/preview",  # Backend preview URL
+                "content_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/content",  # Backend content URL
+                "image_filename": aid.get("image_filename"),
+                "created_at": aid.get("created_at"),
+                "status": aid.get("status", "completed")
+            })
         
         return JSONResponse({
             "success": True,
-            "data": visual_aids,
-            "total": len(visual_aids)
+            "data": formatted_aids,
+            "total": len(formatted_aids)
         })
         
     except Exception as e:
@@ -155,242 +381,268 @@ async def get_user_visual_aids():
 
 
 @router.get("/search")
-async def search_visual_aids(query: str = ""):
-    """Search visual aids"""
+async def search_visual_aids(query: str = "", visual_type: str = None, subject: str = None):
+    """Search visual aids by query, type, or subject"""
     try:
-        # Get all aids first
-        response = await get_user_visual_aids()
-        all_aids = response.body.decode() if hasattr(response, 'body') else {"data": []}
+        # Search visual aids using DAO
+        visual_aids = visual_aid_dao.search_visual_aids(
+            query=query,
+            visual_type=visual_type,
+            subject=subject
+        )
         
-        if isinstance(all_aids, str):
-            import json
-            all_aids = json.loads(all_aids)
-        
-        if query and "data" in all_aids:
-            filtered_aids = [aid for aid in all_aids["data"] if query.lower() in aid["filename"].lower()]
-            return JSONResponse({
-                "success": True,
-                "data": filtered_aids,
-                "total": len(filtered_aids)
+        # Format response
+        formatted_aids = []
+        for aid in visual_aids:
+            formatted_aids.append({
+                "id": aid.get("id"),
+                "title": f"{aid.get('subject', 'General')}: {aid.get('topic', 'Visual Aid')}",
+                "topic": aid.get("topic"),
+                "subject": aid.get("subject"),
+                "grade": aid.get("grade_level"),
+                "visual_type": aid.get("visual_type"),
+                "style": aid.get("style"),
+                "image_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/image",  # Backend image URL
+                "download_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/download",  # Backend download URL
+                "preview_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/preview",  # Backend preview URL
+                "content_url": f"http://localhost:8000/api/v1/visual-aids/{aid.get('id')}/content",  # Backend content URL
+                "image_filename": aid.get("image_filename"),
+                "created_at": aid.get("created_at"),
+                "content_preview": aid.get("content", "")[:200] + "..." if len(aid.get("content", "")) > 200 else aid.get("content", "")
             })
-        return JSONResponse(all_aids)
+        
+        return JSONResponse({
+            "success": True,
+            "data": formatted_aids,
+            "total": len(formatted_aids),
+            "query": query,
+            "filters": {
+                "visual_type": visual_type,
+                "subject": subject
+            }
+        })
         
     except Exception as e:
         logger.error(f"Error searching visual aids: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Image Generation Functions
-def create_visual_aid_image(request: VisualAidRequest) -> bytes:
-    """Generate a visual aid image using PIL"""
+@router.get("/{visual_aid_id}")
+async def get_visual_aid(visual_aid_id: str):
+    """Get a specific visual aid by ID"""
     try:
-        # Create a new image
-        width, height = 800, 600
-        image = Image.new('RGB', (width, height), color='white')
-        draw = ImageDraw.Draw(image)
+        # Get visual aid from database
+        visual_aid = visual_aid_dao.get_visual_aid(visual_aid_id)
         
-        # Color schemes
-        color_schemes = {
-            'blue': {'primary': '#2E86AB', 'secondary': '#A23B72', 'accent': '#F18F01'},
-            'green': {'primary': '#588B8B', 'secondary': '#C8AD7F', 'accent': '#F2E394'},
-            'purple': {'primary': '#6A4C93', 'secondary': '#C8AD7F', 'accent': '#FFD23F'},
-        }
+        if not visual_aid:
+            raise HTTPException(status_code=404, detail="Visual aid not found")
         
-        colors = color_schemes.get(request.color_scheme, color_schemes['blue'])
+        return JSONResponse({
+            "success": True,
+            "data": {
+                "id": visual_aid.get("id"),
+                "title": f"{visual_aid.get('subject', 'General')}: {visual_aid.get('topic', 'Visual Aid')}",
+                "topic": visual_aid.get("topic"),
+                "subject": visual_aid.get("subject"),
+                "grade": visual_aid.get("grade_level"),
+                "visual_type": visual_aid.get("visual_type"),
+                "style": visual_aid.get("style"),
+                "color_scheme": visual_aid.get("color_scheme"),
+                "content": visual_aid.get("content"),
+                "image_url": f"http://localhost:8000/api/v1/visual-aids/{visual_aid.get('id')}/image",  # Backend image URL
+                "download_url": f"http://localhost:8000/api/v1/visual-aids/{visual_aid.get('id')}/download",  # Backend download URL
+                "preview_url": f"http://localhost:8000/api/v1/visual-aids/{visual_aid.get('id')}/preview",  # Backend preview URL
+                "content_url": f"http://localhost:8000/api/v1/visual-aids/{visual_aid.get('id')}/content",  # Backend content URL
+                "image_filename": visual_aid.get("image_filename"),
+                "metadata": visual_aid.get("metadata", {}),
+                "created_at": visual_aid.get("created_at"),
+                "status": visual_aid.get("status", "completed")
+            }
+        })
         
-        # Draw header background
-        draw.rectangle([0, 0, width, 80], fill=colors['primary'])
-        
-        # Try to load a font, fallback to default
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 24)
-            content_font = ImageFont.truetype("arial.ttf", 16)
-        except:
-            title_font = ImageFont.load_default()
-            content_font = ImageFont.load_default()
-        
-        # Draw title
-        title = f"{request.subject}: {request.topic}"
-        draw.text((20, 25), title, fill='white', font=title_font)
-        
-        # Draw grade level
-        draw.text((20, 100), f"Grade: {request.grade}", fill=colors['primary'], font=content_font)
-        
-        # Draw visual type
-        draw.text((20, 130), f"Type: {request.visualType.title()}", fill=colors['secondary'], font=content_font)
-        
-        # Add some educational content boxes
-        box_y = 180
-        concepts = [
-            f"Key Concept 1: Understanding {request.topic}",
-            f"Key Concept 2: Applications of {request.topic}",
-            f"Key Concept 3: Practice with {request.topic}"
-        ]
-        
-        for i, concept in enumerate(concepts):
-            # Draw box
-            draw.rectangle([20, box_y, width-20, box_y+60], outline=colors['primary'], width=2)
-            draw.text((30, box_y+20), concept, fill=colors['primary'], font=content_font)
-            box_y += 80
-        
-        # Add footer
-        draw.rectangle([0, height-50, width, height], fill=colors['accent'])
-        draw.text((20, height-35), "Generated by AI Education Assistant", fill='black', font=content_font)
-        
-        # Convert to bytes
-        img_buffer = io.BytesIO()
-        image.save(img_buffer, format='PNG', quality=95)
-        img_buffer.seek(0)
-        
-        return img_buffer.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error generating image: {str(e)}")
-        # Return a simple fallback image
-        return create_fallback_image(request)
-
-
-def create_infographic_image(request: VisualAidRequest) -> bytes:
-    """Generate an infographic-style image"""
-    try:
-        width, height = 800, 1000
-        image = Image.new('RGB', (width, height), color='#f8f9fa')
-        draw = ImageDraw.Draw(image)
-        
-        # Load fonts
-        try:
-            title_font = ImageFont.truetype("arial.ttf", 32)
-            subtitle_font = ImageFont.truetype("arial.ttf", 20)
-            content_font = ImageFont.truetype("arial.ttf", 16)
-        except:
-            title_font = ImageFont.load_default()
-            subtitle_font = ImageFont.load_default()
-            content_font = ImageFont.load_default()
-        
-        # Colors
-        primary_color = '#2c3e50'
-        accent_color = '#3498db'
-        highlight_color = '#e74c3c'
-        
-        # Header
-        draw.rectangle([0, 0, width, 120], fill=primary_color)
-        draw.text((40, 40), f"{request.topic}", fill='white', font=title_font)
-        
-        # Grade and Subject
-        draw.text((40, 150), f"{request.grade} • {request.subject}", fill=accent_color, font=subtitle_font)
-        
-        # Content sections
-        sections = [
-            "What is it?",
-            "Why is it important?",
-            "How does it work?",
-            "Real-world examples"
-        ]
-        
-        y_pos = 220
-        for i, section in enumerate(sections):
-            # Section header
-            draw.rectangle([40, y_pos, width-40, y_pos+40], fill=accent_color)
-            draw.text((50, y_pos+10), section, fill='white', font=subtitle_font)
-            
-            # Section content
-            content_y = y_pos + 60
-            draw.text((50, content_y), f"This section explains {section.lower()}", fill=primary_color, font=content_font)
-            draw.text((50, content_y+25), f"in relation to {request.topic}.", fill=primary_color, font=content_font)
-            
-            y_pos += 140
-        
-        # Footer
-        draw.rectangle([0, height-60, width, height], fill=highlight_color)
-        draw.text((40, height-40), "AI Generated Educational Content", fill='white', font=content_font)
-        
-        # Convert to bytes
-        img_buffer = io.BytesIO()
-        image.save(img_buffer, format='PNG', quality=95)
-        img_buffer.seek(0)
-        
-        return img_buffer.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error generating infographic: {str(e)}")
-        return create_fallback_image(request)
-
-
-def create_fallback_image(request: VisualAidRequest) -> bytes:
-    """Generate a simple fallback image when other methods fail"""
-    try:
-        width, height = 800, 600
-        image = Image.new('RGB', (width, height), color='#f0f0f0')
-        draw = ImageDraw.Draw(image)
-        
-        # Simple centered text
-        font = ImageFont.load_default()
-        text = f"{request.subject}: {request.topic}\nGrade: {request.grade}"
-        
-        # Get text size and center it
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        x = (width - text_width) // 2
-        y = (height - text_height) // 2
-        
-        draw.text((x, y), text, fill='black', font=font)
-        
-        # Convert to bytes
-        img_buffer = io.BytesIO()
-        image.save(img_buffer, format='PNG')
-        img_buffer.seek(0)
-        
-        return img_buffer.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error generating fallback image: {str(e)}")
-        # Return minimal 1x1 pixel image as absolute fallback
-        minimal_image = Image.new('RGB', (1, 1), color='white')
-        img_buffer = io.BytesIO()
-        minimal_image.save(img_buffer, format='PNG')
-        img_buffer.seek(0)
-        return img_buffer.getvalue()
-
-
-def save_visual_aid_image(image_data: bytes, request: VisualAidRequest, prefix: str = "visual_aid") -> dict:
-    """Save the image and return metadata"""
-    try:
-        # Create directory
-        uploads_dir = os.path.join(os.getcwd(), "uploads", "visual_aids")
-        os.makedirs(uploads_dir, exist_ok=True)
-        
-        # Generate unique filename
-        unique_id = str(uuid.uuid4())[:8]
-        safe_topic = request.topic.replace(" ", "_").replace("/", "_")[:20]
-        safe_subject = request.subject.replace(" ", "_").replace("/", "_")[:15]
-        filename = f"{prefix}_{safe_subject}_{safe_topic}_{unique_id}.png"
-        file_path = os.path.join(uploads_dir, filename)
-        
-        # Save image
-        with open(file_path, 'wb') as f:
-            f.write(image_data)
-        
-        # Get file info
-        file_stat = os.stat(file_path)
-        
-        # Get image dimensions
-        try:
-            with Image.open(file_path) as img:
-                dimensions = f"{img.width}x{img.height}"
-        except:
-            dimensions = "unknown"
-        
-        return {
-            "id": unique_id,
-            "filename": filename,
-            "image_url": f"http://localhost:8000/uploads/visual_aids/{filename}",
-            "size": file_stat.st_size,
-            "created_at": datetime.now().isoformat(),
-            "dimensions": dimensions
-        }
-        
-    except Exception as e:
-        logger.error(f"Error saving image: {str(e)}")
+    except HTTPException:
         raise
+    except Exception as e:
+        logger.error(f"Error getting visual aid: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{visual_aid_id}")
+async def delete_visual_aid(visual_aid_id: str, user_id: str = None):
+    """Delete a visual aid"""
+    try:
+        # Delete from database using DAO
+        success = visual_aid_dao.delete_visual_aid(visual_aid_id, user_id or "default_user")
+        
+        if success:
+            return JSONResponse({
+                "success": True,
+                "message": "Visual aid deleted successfully",
+                "visual_aid_id": visual_aid_id
+            })
+        else:
+            raise HTTPException(status_code=404, detail="Visual aid not found or not authorized")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting visual aid: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{visual_aid_id}/image")
+async def get_visual_aid_image(visual_aid_id: str):
+    """Get the actual image file for a visual aid"""
+    try:
+        # Get visual aid from database
+        visual_aid = visual_aid_dao.get_visual_aid(visual_aid_id)
+        
+        if not visual_aid:
+            raise HTTPException(status_code=404, detail="Visual aid not found")
+        
+        # Get image path
+        image_path = visual_aid.get("image_path")
+        if not image_path or not os.path.exists(image_path):
+            raise HTTPException(status_code=404, detail="Image file not found")
+        
+        # Return the actual image file
+        return FileResponse(
+            path=image_path,
+            media_type='image/png',
+            filename=visual_aid.get("image_filename", "visual_aid.png")
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting visual aid image: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{visual_aid_id}/download")
+async def download_visual_aid_image(visual_aid_id: str):
+    """Download the visual aid image"""
+    try:
+        # Get visual aid from database
+        visual_aid = visual_aid_dao.get_visual_aid(visual_aid_id)
+        
+        if not visual_aid:
+            raise HTTPException(status_code=404, detail="Visual aid not found")
+        
+        # Get image path
+        image_path = visual_aid.get("image_path")
+        if not image_path or not os.path.exists(image_path):
+            raise HTTPException(status_code=404, detail="Image file not found")
+        
+        # Generate download filename
+        topic = visual_aid.get("topic", "visual_aid").replace(" ", "_")
+        subject = visual_aid.get("subject", "general").replace(" ", "_")
+        visual_type = visual_aid.get("visual_type", "image")
+        download_filename = f"{subject}_{topic}_{visual_type}.png"
+        
+        # Return file for download
+        return FileResponse(
+            path=image_path,
+            media_type='image/png',
+            filename=download_filename,
+            headers={"Content-Disposition": f"attachment; filename={download_filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading visual aid image: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{visual_aid_id}/preview")
+async def get_visual_aid_preview(visual_aid_id: str):
+    """Get a preview image for a visual aid"""
+    try:
+        # Get visual aid from database
+        visual_aid = visual_aid_dao.get_visual_aid(visual_aid_id)
+        
+        if not visual_aid:
+            raise HTTPException(status_code=404, detail="Visual aid not found")
+        
+        # Check if actual image exists
+        image_path = visual_aid.get("image_path")
+        if image_path and os.path.exists(image_path):
+            # If it's a Mermaid file, return the content as text for preview
+            if image_path.endswith('.mmd'):
+                with open(image_path, 'r', encoding='utf-8') as f:
+                    mermaid_content = f.read()
+                
+                return JSONResponse({
+                    "success": True,
+                    "data": {
+                        "type": "mermaid",
+                        "content": mermaid_content,
+                        "visual_type": visual_aid.get("visual_type"),
+                        "title": f"{visual_aid.get('subject', 'General')}: {visual_aid.get('topic', 'Visual Aid')}",
+                        "can_render": True,
+                        "instructions": "This is a Mermaid diagram. Use a Mermaid renderer to visualize it."
+                    }
+                })
+            else:
+                # Return the actual image as preview for other formats
+                return FileResponse(
+                    path=image_path,
+                    media_type='image/png'
+                )
+        else:
+            # Return metadata with placeholder info
+            visual_type = visual_aid.get("visual_type", "infographic")
+            placeholder_images = {
+                "infographic": "https://via.placeholder.com/800x600/3498db/ffffff?text=Infographic+Preview",
+                "illustration": "https://via.placeholder.com/800x600/e74c3c/ffffff?text=Illustration+Preview", 
+                "diagram": "https://via.placeholder.com/800x600/2ecc71/ffffff?text=Diagram+Preview",
+                "chart": "https://via.placeholder.com/800x600/f39c12/ffffff?text=Chart+Preview",
+                "mind_map": "https://via.placeholder.com/800x600/9b59b6/ffffff?text=Mind+Map+Preview",
+                "timeline": "https://via.placeholder.com/800x600/1abc9c/ffffff?text=Timeline+Preview"
+            }
+            
+            placeholder_url = placeholder_images.get(visual_type, placeholder_images["infographic"])
+            
+            return JSONResponse({
+                "success": True,
+                "data": {
+                    "image_url": placeholder_url,
+                    "visual_type": visual_type,
+                    "title": f"{visual_aid.get('subject', 'General')}: {visual_aid.get('topic', 'Visual Aid')}"
+                }
+            })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting visual aid preview: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{visual_aid_id}/content")
+async def get_visual_aid_content(visual_aid_id: str):
+    """Get the text content of a visual aid"""
+    try:
+        # Get visual aid from database
+        visual_aid = visual_aid_dao.get_visual_aid(visual_aid_id)
+        
+        if not visual_aid:
+            raise HTTPException(status_code=404, detail="Visual aid not found")
+        
+        return JSONResponse({
+            "success": True,
+            "data": {
+                "id": visual_aid.get("id"),
+                "title": f"{visual_aid.get('subject', 'General')}: {visual_aid.get('topic', 'Visual Aid')}",
+                "content": visual_aid.get("content"),
+                "visual_type": visual_aid.get("visual_type"),
+                "metadata": visual_aid.get("metadata", {})
+            }
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting visual aid content: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

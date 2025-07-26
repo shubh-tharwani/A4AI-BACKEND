@@ -42,11 +42,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {Config.APP_NAME} v{Config.APP_VERSION}")
     logger.info(f"Debug mode: {Config.DEBUG}")
     
-    # Create uploads directory
+    # Create uploads and temp_image directories
     uploads_dir = os.path.join(os.getcwd(), "uploads")
-    visual_aids_dir = os.path.join(uploads_dir, "visual_aids")
-    os.makedirs(visual_aids_dir, exist_ok=True)
-    logger.info(f"Created uploads directory: {uploads_dir}")
+    temp_image_dir = os.path.join(os.getcwd(), "temp_image")
+    os.makedirs(uploads_dir, exist_ok=True)
+    os.makedirs(temp_image_dir, exist_ok=True)
+    logger.info(f"Created directories: {uploads_dir}, {temp_image_dir}")
     
     logger.info("Application startup complete")
     
@@ -71,6 +72,12 @@ uploads_dir = os.path.join(os.getcwd(), "uploads")
 if not os.path.exists(uploads_dir):
     os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Mount static files for serving visual aid images
+temp_image_dir = os.path.join(os.getcwd(), "temp_image")
+if not os.path.exists(temp_image_dir):
+    os.makedirs(temp_image_dir, exist_ok=True)
+app.mount("/temp_image", StaticFiles(directory="temp_image"), name="temp_image")
 
 # Add CORS middleware
 app.add_middleware(
