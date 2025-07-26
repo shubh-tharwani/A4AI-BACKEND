@@ -34,6 +34,9 @@ pip install -r requirements.txt
 
 # Start the server:
 
+C:/Users/gauth/Documents/BACKEND_A4AI/A4AI-BACKEND/.venv/Scripts/python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Alternative (if virtual environment is activated):
 .\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 # Stop the server:

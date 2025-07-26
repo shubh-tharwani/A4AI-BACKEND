@@ -4,8 +4,8 @@ from services.activities_service import generate_interactive_story, generate_ar_
 router = APIRouter(prefix="/activities", tags=["Activities"])
 
 @router.get("/story")
-async def get_story(grade: int, topic: str):
-    return await generate_interactive_story(grade, topic)
+async def get_story(grade: int, topic: str, language: str):
+    return await generate_interactive_story(grade, topic, language)
 
 @router.get("/ar-scene")
 async def get_ar_scene(topic: str):

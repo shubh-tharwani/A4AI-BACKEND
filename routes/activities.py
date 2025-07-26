@@ -24,6 +24,7 @@ router = APIRouter(prefix="/activities", tags=["Activities"])
 class InteractiveStoryRequest(BaseModel):
     grade: int = Field(..., ge=1, le=12, description="Grade level (1-12)")
     topic: str = Field(..., min_length=1, max_length=200, description="Educational topic")
+    language: str = Field(..., description="Language for the story")
     
     @validator('topic')
     def validate_topic(cls, v):
@@ -56,23 +57,19 @@ class BadgeAssignmentRequest(BaseModel):
 
 
 # Response Models
-class QuizQuestion(BaseModel):
-    question: str
-    options: List[str]
-    answer: str
-    explanation: Optional[str] = None
-
-
 class InteractiveStoryResponse(BaseModel):
     story_id: str
     title: str
     story_text: str
-    quizzes: List[QuizQuestion]
+    think_about_it: str
+    what_you_learn: str
     learning_objectives: List[str]
     vocabulary_words: List[str]
     audio_filename: str
     grade_level: int
     topic: str
+    language: str
+    subject: str
 
 
 class AREnvironment(BaseModel):
@@ -147,13 +144,16 @@ async def create_interactive_story(
     req: Request
 ):
     """
-    Generate an interactive educational story with embedded quizzes and audio
+    Generate an interactive educational story with audio in specified language
     
     Creates a voice-enabled story with:
     - Age-appropriate content for specified grade level
-    - Interactive quiz questions
+    - 500-word educational narrative
+    - "Think about it" reflection section
+    - "What you'll learn" summary section
     - Generated audio narration
     - Learning objectives and vocabulary
+    - Complete localization in requested language
     """
     try:
         user_id = await get_current_user_id(req)
@@ -161,6 +161,7 @@ async def create_interactive_story(
         story_data = await generate_interactive_story(
             grade=request.grade,
             topic=request.topic,
+            language=request.language,
             user_id=user_id
         )
         

@@ -16,12 +16,20 @@ from app.routes import voice  # Add this import
 import config
 from config import Config
 
-# Set up logging
+# Set up enhanced logging
 logging.basicConfig(
     level=getattr(logging, Config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler('app.log', mode='a')  # File output
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# Also set up uvicorn logger to be more visible
+uvicorn_logger = logging.getLogger("uvicorn")
+uvicorn_logger.setLevel(logging.INFO)
 
 # Planning routes enabled
 PLANNING_AVAILABLE = True
@@ -105,14 +113,18 @@ async def log_requests(request: Request, call_next):
         
     except Exception as e:
         process_time = time.time() - start_time
-        logger.error(f"Request failed: {str(e)} in {process_time:.4f}s")
+        error_msg = f"Request failed: {str(e)} in {process_time:.4f}s on {request.method} {request.url.path}"
+        logger.error(error_msg, exc_info=True)
+        print(f"ERROR: {error_msg}")  # Also print to console for immediate visibility
         raise
 
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler for unhandled errors"""
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    error_msg = f"Unhandled exception on {request.method} {request.url.path}: {str(exc)}"
+    logger.error(error_msg, exc_info=True)
+    print(f"ERROR: {error_msg}")  # Also print to console for immediate visibility
     
     return JSONResponse(
         status_code=500,
@@ -121,7 +133,8 @@ async def global_exception_handler(request: Request, exc: Exception):
             "message": "An unexpected error occurred",
             "detail": str(exc) if Config.DEBUG else "Internal server error",
             "path": request.url.path,
-            "method": request.method
+            "method": request.method,
+            "timestamp": time.time()
         }
     )
 
@@ -129,7 +142,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Enhanced HTTP exception handler"""
-    logger.warning(f"HTTP {exc.status_code}: {exc.detail} on {request.method} {request.url.path}")
+    error_msg = f"HTTP {exc.status_code}: {exc.detail} on {request.method} {request.url.path}"
+    logger.warning(error_msg)
+    print(f"WARNING: {error_msg}")  # Also print to console for immediate visibility
     
     return JSONResponse(
         status_code=exc.status_code,
@@ -138,7 +153,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "message": exc.detail,
             "status_code": exc.status_code,
             "path": request.url.path,
-            "method": request.method
+            "method": request.method,
+            "timestamp": time.time()
         }
     )
 

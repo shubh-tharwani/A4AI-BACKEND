@@ -51,6 +51,7 @@ class VertexAIService:
             Exception: If text generation fails
         """
         try:
+            print(f"🤖 Initializing model: {self.model_name}")
             model = GenerativeModel(self.model_name)
             
             # Prepare generation config
@@ -60,19 +61,27 @@ class VertexAIService:
             if temperature is not None:
                 generation_config['temperature'] = temperature
             
+            print(f"🔧 Generation config: {generation_config}")
+            print(f"📝 Prompt length: {len(prompt)} characters")
+            
             response = model.generate_content(
                 prompt,
                 generation_config=generation_config if generation_config else None
             )
             
+            print(f"📨 Response object: {type(response)}")
+            print(f"📄 Response text length: {len(response.text) if response.text else 0}")
+            
             if not response.text:
                 logger.warning("Empty response from Vertex AI")
+                print("⚠️ Empty response from Vertex AI")
                 return "I apologize, but I couldn't generate a response at this time."
             
             return response.text.strip()
             
         except Exception as e:
             error_msg = f"Error generating text with Vertex AI: {str(e)}"
+            print(f"❌ Vertex AI Error: {error_msg}")
             logger.error(error_msg)
             raise Exception(error_msg)
     
