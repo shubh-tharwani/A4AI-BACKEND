@@ -138,7 +138,7 @@ class LessonPlanContent(BaseModel):
 class LessonPlanResponse(BaseModel):
     status: str
     plan_id: str
-    lesson_plan: str
+    lesson_plan: Dict[str, Any]  # Changed from str to Dict to handle JSON
     metadata: Dict[str, Any]
     class_info: Optional[Dict[str, str]] = None
 
@@ -172,6 +172,7 @@ class CurriculumPlanContent(BaseModel):
 class CurriculumPlanResponse(BaseModel):
     status: str
     user_id: str
+    curriculum: List[Dict[str, Any]]  # Changed to List[Dict] to handle array of lesson plans
 
 
 class PlanSummary(BaseModel):
@@ -216,13 +217,42 @@ async def create_lesson_plan(
         objectives = ', '.join(request.learning_objectives or [])
         start_time=request.start_time
         prompt = (
-            f"Create a detailed curriculum plan for the following standards: {standards}. "
-            f"Start time: {start_time}, "
-            f"Duration: {request.duration} minutes(s). "
-            f"Learning objectives: {objectives}. "
-            f"For each topic, provide a schedule with start time and duration."
-            f"don't give any output other than the mentioned information above"
-            f"The output should be in the format of json"
+f"Create a detailed curriculum plan for the following standards: {standards}. "
+        f"Start time: {start_time}, "
+        f"Duration: {request.duration} minute(s). "
+        f"Learning objectives: {objectives}. "
+        f"For each topic, provide a schedule with start time and duration. "
+        f"Each entry should include:\n"
+        f"- content: a description of the teaching segment.\n"
+        f"- schedule: a map with:\n"
+        f"    - topic: title of the segment\n"
+        f"    - activity: what the teacher and students will do\n"
+        f"    - start_time: HH:MM (24hr format)\n"
+        f"    - duration: in minutes\n"
+        f"    - materials: what is needed for the activity\n"
+        f"- (Optional) notes: additional tips for teaching\n\n"
+        f"The output should be a **parsable JSON** with the following structure to be strictly present and nothing else:\n\n"
+        f"""{{
+  "plan_type": "daily",
+  "lesson_plan": {{
+    "subject": "<subject>",
+    "topic": "<topic>",
+    "duration": {request.duration},
+    "grade": <grade>,
+    "start_time": "{start_time}",
+    "learning_objectives": ["{objectives}"],
+    "curriculum_plan": [
+      {{
+        "content": "...",
+        "schedule": {{
+          "topic": "...",
+          "start_time": "...",
+          "duration": ...,
+        }},
+      }}
+    ]
+  }}
+}}"""
         )
 
         # Call generative AI (Vertex AI or similar)
@@ -258,7 +288,7 @@ async def create_lesson_plan(
         return {
             "status": "success",
             "plan_id": plan_id or "",
-            "lesson_plan": str(lesson_plan),
+            "lesson_plan": lesson_plan,  # Send as JSON object instead of string
             "metadata": {"message": "Lesson plan created successfully"},
             "class_info": {"class_id": request.class_id}
         }
@@ -278,7 +308,7 @@ async def create_curriculum_plan(
     """
     try:
         user_id = await get_current_user_id(req)
-        print("User id from print: "+user_id)
+
         # Get the latest curriculum plan from the database
         from dao.planning_dao import planning_dao
         curriculum_data = planning_dao.get_user_lesson_plans(
@@ -287,13 +317,18 @@ async def create_curriculum_plan(
         
         if not curriculum_data:
             return {
-               "status":"Failed",
-                "user_id":user_id
+                "status": "Failed",
+                "user_id": user_id,
+                "curriculum": []  # Return empty array instead of "Nil"
             }
         
+        # Ensure curriculum_data is always an array
+        plans_array = curriculum_data if isinstance(curriculum_data, list) else [curriculum_data]
+        
         return {
-            "status":"Success",
-            "user_id":user_id
+            "status": "Success",
+            "user_id": user_id,
+            "curriculum": plans_array  # Always return as array
         }
         
     except ValueError as e:
