@@ -131,3 +131,11 @@ config_backup/
 # Temporary files
 *.tmp
 *.temp
+
+# Backup files
+*_backup.py
+*_old.py
+*_new.py
+
+# Uploads directory
+uploads/

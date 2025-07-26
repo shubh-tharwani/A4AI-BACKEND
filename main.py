@@ -1,15 +1,18 @@
 import logging
 import time
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
 from routes import education, assessment_routes, auth, personalization, activities, visual_aids, voice_consolidated
+from app.routes import voice  # Add this import
 import config
 from config import Config
 
@@ -30,6 +33,13 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {Config.APP_NAME} v{Config.APP_VERSION}")
     logger.info(f"Debug mode: {Config.DEBUG}")
+    
+    # Create uploads directory
+    uploads_dir = os.path.join(os.getcwd(), "uploads")
+    visual_aids_dir = os.path.join(uploads_dir, "visual_aids")
+    os.makedirs(visual_aids_dir, exist_ok=True)
+    logger.info(f"Created uploads directory: {uploads_dir}")
+    
     logger.info("Application startup complete")
     
     yield
@@ -47,6 +57,12 @@ app = FastAPI(
     openapi_url="/openapi.json" if Config.DEBUG else None,
     lifespan=lifespan,
 )
+
+# Mount static files for serving uploaded images
+uploads_dir = os.path.join(os.getcwd(), "uploads")
+if not os.path.exists(uploads_dir):
+    os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Add CORS middleware
 app.add_middleware(
@@ -147,6 +163,15 @@ try:
     
     app.include_router(personalization.router, prefix="/api/v1", tags=["Personalization"])
     app.include_router(voice_consolidated.router, prefix="/api/v1/voice", tags=["Voice Assistant"])
+    
+    # Add the new voice assistant router
+    try:
+        app.include_router(voice.router, prefix="/api/v1/voice", tags=["Voice Assistant API"])
+        logger.info("Voice Assistant API routes included successfully")
+        voice_api_loaded = True
+    except Exception as e:
+        logger.error(f"Failed to include Voice Assistant API routes: {e}")
+        voice_api_loaded = False
     
     # Include teacher dashboard routes
     try:
