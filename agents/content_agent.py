@@ -54,7 +54,9 @@ class ContentAgent:
         self.capabilities = [
             "content_generation", "curriculum_alignment",
             "multimedia_integration", "adaptive_content",
-            "interactive_elements", "assessment_integration"
+            "interactive_elements", "assessment_integration",
+            "visual_aid_coordination", "lesson_plan_sync",
+            "real_time_visual_updates", "dynamic_content_adaptation"
         ]
         self.adk_enabled = False
         self.firestore_client = None

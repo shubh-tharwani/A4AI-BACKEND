@@ -61,7 +61,9 @@ class AssessmentAgent:
         self.capabilities = [
             "assessment_generation", "rubric_creation",
             "adaptive_testing", "performance_analysis",
-            "question_bank_management", "auto_grading"
+            "question_bank_management", "auto_grading",
+            "visual_aid_integration", "lesson_plan_alignment",
+            "real_time_feedback", "multimedia_assessment"
         ]
         self.adk_enabled = False
         self.firestore_client = None

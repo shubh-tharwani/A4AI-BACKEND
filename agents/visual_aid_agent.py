@@ -58,7 +58,11 @@ class VisualAidAgent:
         self.capabilities = [
             "visual_content_generation", "design_optimization",
             "accessibility_compliance", "multi_format_export",
-            "interactive_elements", "data_visualization"
+            "interactive_elements", "data_visualization",
+            "real_time_rendering", "content_sync",
+            "interactive_visuals", "accessibility_support",
+            "multi_format_export", "context_aware_scaling",
+            "dynamic_content_adaptation"
         ]
         self.adk_enabled = False
         self.firestore_client = None

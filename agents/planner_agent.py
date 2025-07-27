@@ -51,7 +51,10 @@ class PlannerAgent:
         self.version = "3.0.0"
         self.capabilities = [
             "lesson_planning", "curriculum_alignment",
-            "progress_analysis", "adaptive_learning_paths"
+            "progress_analysis", "adaptive_learning_paths",
+            "visual_aid_coordination", "content_orchestration",
+            "multi_agent_sync", "resource_optimization",
+            "dynamic_plan_adaptation", "assessment_integration"
         ]
         self.adk_enabled = False
         self.firestore_client = None

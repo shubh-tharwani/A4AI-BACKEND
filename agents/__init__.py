@@ -39,6 +39,15 @@ from .visual_aid_agent import (
     handle_visual_aid
 )
 
+from .orchestrator_agent import (
+    OrchestratorAgent,
+    OrchestrationRequest,
+    OrchestrationResponse,
+    orchestrator_agent,
+    orchestrator_app,
+    handle_orchestration
+)
+
 __all__ = [
     # Planner Agent
     "PlannerAgent", "PlannerRequest", "PlannerResponse", 
@@ -54,7 +63,11 @@ __all__ = [
     
     # Visual Aid Agent
     "VisualAidAgent", "VisualAidRequest", "VisualAidResponse",
-    "visual_aid_agent", "visual_aid_app", "handle_visual_aid"
+    "visual_aid_agent", "visual_aid_app", "handle_visual_aid",
+    
+    # Orchestrator Agent
+    "OrchestratorAgent", "OrchestrationRequest", "OrchestrationResponse",
+    "orchestrator_agent", "orchestrator_app", "handle_orchestration"
 ]
 
 # Version info
@@ -67,7 +80,8 @@ AGENTS = {
     "planner": planner_agent,
     "content": content_agent,
     "assessment": assessment_agent,
-    "visual_aid": visual_aid_agent
+    "visual_aid": visual_aid_agent,
+    "orchestrator": orchestrator_agent
 }
 
 # ADK Apps registry
@@ -75,7 +89,8 @@ ADK_APPS = {
     "planner": planner_app,
     "content": content_app,
     "assessment": assessment_app,
-    "visual_aid": visual_aid_app
+    "visual_aid": visual_aid_app,
+    "orchestrator": orchestrator_app
 }
 
 def get_agent(agent_name: str):

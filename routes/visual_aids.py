@@ -27,15 +27,15 @@ from dao.user_dao import user_dao
 # Import centralized error handling
 from utils.dao_error_handler import handle_service_dao_errors, ensure_document_id
 
-# Import the new image generator
-from services.image_generator import ImageGenerator
+# Import the new Gemini image generator
+from services.gemini_image_generator import GeminiImageGenerator
 
 # Initialize Vertex AI
 vertexai.init(project=Config.PROJECT_ID, location=Config.LOCATION)
 model = GenerativeModel(Config.GOOGLE_GEMINI_MODEL)
 
-# Initialize image generator
-image_generator = ImageGenerator()
+# Initialize Gemini image generator
+image_generator = GeminiImageGenerator()
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/visual-aids", tags=["Visual Aids"])
@@ -152,36 +152,27 @@ def get_visual_type_context(visual_type: str, topic: str, subject: str, grade: s
 async def generate_visual_aid_content(request: VisualAidRequest, user_id: str = None) -> Dict[str, Any]:
     """Generate educational visual aid content using Vertex AI Gemini + create actual image"""
     try:
-        # Get visual type specific context
-        visual_context = get_visual_type_context(request.visualType, request.topic, request.subject, request.grade)
-        
-        # Create comprehensive prompt for Gemini
         prompt = f"""
-        {visual_context}
-        
-        Additional Requirements:
-        - Visual Style: {request.style}
-        - Color Scheme: {request.color_scheme}
-        - Educational Level: Grade {request.grade}
-        - Subject Focus: {request.subject}
-        
-        Please provide:
-        1. TITLE: A compelling title for the visual aid
-        2. STRUCTURE: Detailed structure and layout description
-        3. CONTENT: Complete educational content organized by sections
-        4. VISUAL_ELEMENTS: Specific visual elements to include
-        5. COLOR_GUIDANCE: How to apply the {request.color_scheme} color scheme
-        6. EDUCATIONAL_OBJECTIVES: Learning objectives this visual aid supports
-        
-        Format the response as a structured educational content that can be used to create the visual aid.
+        Create a visually engaging, interactive-style educational on the topic "{request.topic}" for grade {request.grade} {request.subject}.
+
+        Design requirements:
+        - Modern infographic style with **vibrant colors**, **clean icons**, and **visual hierarchy**
+        - Use **illustrations, diagrams, and minimal text**
+        - Include: **Title at the top**, central concept in the middle, and related sub-topics in rounded boxes with arrows connecting them
+        - Background: soft gradient or white with subtle patterns
+        - Highlight key points using icons (e.g., heart icon, pulse icon, blood drop for cardiovascular system)
+        - Make it look like a **learning poster** with engaging visual storytelling
+        - Avoid plain step-by-step text; instead use **graphical representation**
+        - Ensure readability for school students and an **interactive dashboard-like feel**
+        - Final output should be in **image format only** with no code or text overlays
         """
-        
+
         # Generate content using Gemini
         response = model.generate_content(prompt)
         generated_content = response.text
         
         # Generate actual image using the content
-        logger.info(f"Generating actual image for {request.visualType}: {request.topic}")
+        logger.info(f"Generating actual image for : {request.topic}")
         file_path, filename, image_metadata = image_generator.generate_image(
             content=generated_content,
             visual_type=request.visualType,
