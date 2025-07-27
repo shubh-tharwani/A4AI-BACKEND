@@ -207,8 +207,7 @@ async def voice_assistant(
 
 @router.get("/download-audio/{filename}",
            summary="Download Generated Audio",
-           description="Download AI-generated audio response file",
-           dependencies=[Depends(firebase_auth)])
+           description="Download AI-generated audio response file")
 async def download_audio_file(
     filename: str,
     user_request: Request = None
@@ -233,12 +232,25 @@ async def download_audio_file(
         # Determine media type
         media_type = mimetypes.guess_type(audio_path)[0] or "audio/mpeg"
         
-        # Return file
+        # Check file size to ensure it's valid
+        file_size = os.path.getsize(audio_path)
+        if file_size == 0:
+            raise HTTPException(status_code=404, detail="Audio file is empty")
+        
+        # Return file with enhanced headers for browser compatibility
         return FileResponse(
             path=audio_path,
             media_type=media_type,
             filename=filename,
-            headers={"Cache-Control": "no-cache"}
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "Content-Disposition": f"inline; filename={filename}",
+                "Accept-Ranges": "bytes",
+                "Content-Type": "audio/mpeg",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Range, Content-Range"
+            }
         )
         
     except HTTPException:
@@ -246,6 +258,56 @@ async def download_audio_file(
     except Exception as e:
         logger.error(f"Audio download error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to download audio: {str(e)}")
+
+# ===== DIRECT AUDIO SERVING ENDPOINT =====
+
+@router.get("/audio/{filename}",
+           summary="Serve Audio File",
+           description="Serve AI-generated audio response file for direct playback")
+async def serve_audio_file(filename: str):
+    """
+    Serve AI-generated audio response for direct playback in browser
+    
+    - **filename**: The audio filename to serve
+    """
+    try:
+        # Security check: ensure filename doesn't contain path traversal
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+        
+        # Construct file path
+        audio_path = os.path.join(os.getcwd(), "temp_audio", filename)
+        
+        # Verify file exists
+        if not os.path.exists(audio_path):
+            raise HTTPException(status_code=404, detail="Audio file not found")
+        
+        # Check file size to ensure it's valid
+        file_size = os.path.getsize(audio_path)
+        if file_size == 0:
+            raise HTTPException(status_code=404, detail="Audio file is empty")
+        
+        # Return file with headers optimized for browser audio playback
+        return FileResponse(
+            path=audio_path,
+            media_type="audio/mpeg",
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "Content-Disposition": f"inline; filename={filename}",
+                "Accept-Ranges": "bytes",
+                "Content-Type": "audio/mpeg",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS, HEAD",
+                "Access-Control-Allow-Headers": "Range, Content-Range",
+                "Content-Length": str(file_size)
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Audio serving error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to serve audio: {str(e)}")
 
 # ===== CONVERSATION HISTORY ENDPOINT =====
 

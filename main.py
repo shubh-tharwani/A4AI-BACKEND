@@ -11,7 +11,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 import uvicorn
 
-from routes import education, assessment_routes, auth, personalization, activities, visual_aids, voice_consolidated
+from routes import education, assessment_routes, auth, personalization, activities, visual_aids, voice_consolidated, voice_unified
 from app.routes import voice  # Add this import
 import config
 from config import Config
@@ -186,6 +186,7 @@ try:
     
     app.include_router(personalization.router, prefix="/api/v1", tags=["Personalization"])
     app.include_router(voice_consolidated.router, prefix="/api/v1/voice", tags=["Voice Assistant"])
+    app.include_router(voice_unified.router, prefix="/api/v1/voice", tags=["Voice Unified"])
     
     # Add the new voice assistant router
     try:

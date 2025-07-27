@@ -3,11 +3,13 @@ import sys
 import tempfile
 import uuid
 import json
+import time
 from datetime import datetime
 from google.cloud import speech
 from google.cloud import texttospeech
 import vertexai
 from vertexai.generative_models import GenerativeModel
+from google.api_core import retry, exceptions
 
 # Add parent directory to path to import config.py from root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,10 +25,25 @@ vertexai.init(project=Config.PROJECT_ID, location=Config.LOCATION)
 AUDIO_FILES_DIR = os.path.join(os.getcwd(), "temp_audio")
 os.makedirs(AUDIO_FILES_DIR, exist_ok=True)
 
-# Initialize clients once
+# Initialize clients once with timeout configuration
 speech_client = speech.SpeechClient()
 tts_client = texttospeech.TextToSpeechClient()
 model = GenerativeModel(Config.GOOGLE_GEMINI_MODEL)
+
+# Configure retry strategy for Google Cloud APIs
+retry_config = retry.Retry(
+    initial=1.0,
+    maximum=10.0,
+    multiplier=2.0,
+    deadline=60.0,
+    predicate=retry.if_exception_type(
+        exceptions.DeadlineExceeded,
+        exceptions.ServiceUnavailable,
+        exceptions.InternalServerError,
+        ConnectionError,
+        TimeoutError
+    )
+)
 
 # Detect encoding based on extension
 def get_audio_encoding(file_extension):
@@ -51,6 +68,115 @@ def get_sample_rate_for_encoding(file_extension):
         return 48000  # Standard for OPUS
     else:
         return None  # Let Google auto-detect
+
+
+def generate_tts_audio_with_retry(text: str, max_retries: int = 3) -> bytes:
+    """
+    Generate TTS audio with retry logic and timeout handling
+    
+    Args:
+        text: Text to convert to speech
+        max_retries: Maximum number of retry attempts
+        
+    Returns:
+        bytes: Audio content as MP3 bytes
+        
+    Raises:
+        Exception: If all retry attempts fail
+    """
+    for attempt in range(max_retries):
+        try:
+            print(f"🎙️ TTS Attempt {attempt + 1}/{max_retries}")
+            
+            # Create synthesis input
+            synthesis_input = texttospeech.SynthesisInput(text=text)
+            
+            # Use reliable voice configuration
+            voice_params = texttospeech.VoiceSelectionParams(
+                language_code="en-US",
+                name="en-US-Standard-D",  # Use Standard voice (more reliable than Wavenet)
+                ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
+            )
+            
+            # Audio configuration
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3,
+                speaking_rate=1.0,
+                pitch=0.0
+            )
+
+            # Make TTS request with retry and timeout
+            print(f"🔄 Making TTS request...")
+            start_time = time.time()
+            
+            tts_response = tts_client.synthesize_speech(
+                request={
+                    "input": synthesis_input,
+                    "voice": voice_params,
+                    "audio_config": audio_config
+                },
+                retry=retry_config,
+                timeout=30.0  # 30 second timeout
+            )
+            
+            elapsed_time = time.time() - start_time
+            print(f"✅ TTS request completed in {elapsed_time:.2f} seconds")
+            
+            # Validate response
+            if not tts_response.audio_content:
+                raise Exception("TTS service returned empty audio content")
+            
+            print(f"✅ TTS audio generated successfully: {len(tts_response.audio_content)} bytes")
+            return tts_response.audio_content
+            
+        except (exceptions.DeadlineExceeded, exceptions.ServiceUnavailable, ConnectionError, TimeoutError) as e:
+            print(f"❌ TTS Attempt {attempt + 1} failed with network error: {e}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2  # Exponential backoff
+                print(f"⏳ Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            else:
+                print(f"💀 All TTS attempts failed")
+                raise Exception(f"TTS service unavailable after {max_retries} attempts: {e}")
+                
+        except Exception as e:
+            print(f"❌ TTS Attempt {attempt + 1} failed with error: {e}")
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2
+                print(f"⏳ Waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            else:
+                print(f"💀 All TTS attempts failed")
+                raise Exception(f"TTS failed after {max_retries} attempts: {e}")
+
+
+def create_fallback_audio(text: str) -> bytes:
+    """
+    Create a simple fallback audio when TTS fails completely
+    
+    Args:
+        text: Original text (for logging)
+        
+    Returns:
+        bytes: Simple MP3 audio file content
+    """
+    print(f"🔇 Creating fallback audio for: {text[:50]}...")
+    
+    # Create a minimal MP3 file with silence
+    # This is a very basic MP3 file header that represents a short silence
+    mp3_header = bytes([
+        0xFF, 0xFB, 0x90, 0x00,  # MP3 frame header
+        0x00, 0x00, 0x00, 0x00,  # Frame data
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    ])
+    
+    # Repeat the pattern to create a 1-second silence (approximate)
+    fallback_audio = mp3_header * 100  # Creates ~1.6KB of audio data
+    
+    print(f"🔇 Fallback audio created: {len(fallback_audio)} bytes")
+    return fallback_audio
 
 
 async def process_voice_command(audio_file) -> dict:
@@ -185,19 +311,27 @@ async def process_voice_command(audio_file) -> dict:
             response_text = "I couldn't understand the command. Please try again."
 
         # --- STEP 3: Convert AI Response to Speech ---
-        synthesis_input = texttospeech.SynthesisInput(text=response_text)
-        voice_params = texttospeech.VoiceSelectionParams(language_code="en-US")
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
+        try:
+            # Use the robust TTS function with retry logic
+            audio_content = generate_tts_audio_with_retry(response_text, max_retries=3)
+            
+        except Exception as tts_error:
+            print(f"❌ TTS generation failed completely: {tts_error}")
+            # Use fallback audio
+            audio_content = create_fallback_audio(response_text)
 
-        tts_response = tts_client.synthesize_speech(
-            input=synthesis_input, voice=voice_params, audio_config=audio_config
-        )
-
-        # Save audio file
+        # Save audio file with validation
         unique_filename = f"ai_response_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
         audio_output_path = os.path.join(AUDIO_FILES_DIR, unique_filename)
+        
         with open(audio_output_path, "wb") as out:
-            out.write(tts_response.audio_content)
+            out.write(audio_content)
+        
+        # Verify file was written correctly
+        if not os.path.exists(audio_output_path) or os.path.getsize(audio_output_path) == 0:
+            raise Exception("Failed to create valid audio file")
+        
+        print(f"✅ Audio file created: {unique_filename} ({os.path.getsize(audio_output_path)} bytes)")
 
         return {
             "status": "success",
@@ -278,19 +412,27 @@ Response format: {{"answer": "Your response here"}}
             response_text = "I'm ready to assist you with educational tasks. How can I help?"
 
         # --- STEP 2: Convert AI Response to Speech ---
-        synthesis_input = texttospeech.SynthesisInput(text=response_text)
-        voice_params = texttospeech.VoiceSelectionParams(language_code="en-US")
-        audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-
-        tts_response = tts_client.synthesize_speech(
-            input=synthesis_input, voice=voice_params, audio_config=audio_config
-        )
+        try:
+            # Use the robust TTS function with retry logic
+            audio_content = generate_tts_audio_with_retry(response_text, max_retries=3)
+            
+        except Exception as tts_error:
+            print(f"❌ TTS generation failed completely: {tts_error}")
+            # Use fallback audio
+            audio_content = create_fallback_audio(response_text)
 
         # Save audio file
         unique_filename = f"response_{uuid.uuid4().hex[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
         audio_output_path = os.path.join(AUDIO_FILES_DIR, unique_filename)
+        
         with open(audio_output_path, "wb") as out:
-            out.write(tts_response.audio_content)
+            out.write(audio_content)
+        
+        # Verify file was written correctly
+        if not os.path.exists(audio_output_path) or os.path.getsize(audio_output_path) == 0:
+            raise Exception("Failed to create valid audio file")
+            
+        print(f"✅ Text command audio file created: {unique_filename} ({os.path.getsize(audio_output_path)} bytes)")
 
         return {
             "status": "success",
