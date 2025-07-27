@@ -33,9 +33,9 @@ RUN mkdir -p /app/temp_audio /app/logs \
 # Copy requirements first for better layer caching
 COPY --chown=appuser:appuser requirements.txt .
 
-# Install Python dependencies with optimizations for production
+# Install Python dependencies with network resilience and retries
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --retries 5 --timeout 300 --default-timeout=300 -r requirements.txt \
     && pip cache purge \
     && find /usr/local -depth \( \( -type d -a \( -name test -o -name tests -o -name idle_test \) \) -o \( -type f -a \( -name '*.pyc' -o -name '*.pyo' \) \) \) -exec rm -rf '{}' + \
     && find /usr/local -type f -name "*.so" -exec strip {} \;
