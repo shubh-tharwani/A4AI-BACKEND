@@ -1,0 +1,59 @@
+---
+title: Science: Heart Diagram - Image
+---
+graph TD
+    subgraph Heart's Colorful Journey: Understanding Your Pumping Powerhouse
+    direction TB
+
+    A[Right Atrium<br><small>Receives deoxygenated blood from the body</small>]:::atrium --> B(Right Ventricle<br><small>Pumps deoxygenated blood to the lungs</small>):::ventricle
+    B --> C{Pulmonary Artery<br><small>Carries deoxygenated blood to the lungs</small>}:::artery
+
+    C --> D[Lungs<br><small>Blood picks up oxygen</small>]:::lungs
+
+    D --> E[Left Atrium<br><small>Receives oxygenated blood from the lungs</small>]:::atrium
+    E --> F(Left Ventricle<br><small>Pumps oxygenated blood to the body</small>):::ventricle
+    F --> G{Aorta<br><small>Carries oxygenated blood to the body</small>}:::artery
+
+    G --> H[Body<br><small>Oxygen is used by cells</small>]:::body
+    H --> A
+
+    subgraph Electrical System
+    direction LR
+        I[SA Node<br><small>Pacemaker, generates electrical signal</small>]:::node --> J(AV Node<br><small>Delays the signal</small>):::node
+        J --> K{Bundle of His<br><small>Carries signal to ventricles</small>}:::node
+        K --> L[Purkinje Fibers<br><small>Distribute signal, causing contraction</small>]:::node
+        style I fill:#f9f,stroke:#333,stroke-width:2px
+        style J fill:#f9f,stroke:#333,stroke-width:2px
+        style K fill:#f9f,stroke:#333,stroke-width:2px
+        style L fill:#f9f,stroke:#333,stroke-width:2px
+
+        style A fill:#ccf,stroke:#333,stroke-width:2px
+        style B fill:#ccf,stroke:#333,stroke-width:2px
+        style C fill:#ccf,stroke:#333,stroke-width:2px
+        style D fill:#cfc,stroke:#333,stroke-width:2px
+        style E fill:#fcc,stroke:#333,stroke-width:2px
+        style F fill:#fcc,stroke:#333,stroke-width:2px
+        style G fill:#fcc,stroke:#333,stroke-width:2px
+        style H fill:#eee,stroke:#333,stroke-width:2px
+
+    end
+    end
+
+    linkStyle 0,1,2,3,4,5,6,7 stroke-width:2px;
+    linkStyle 8,9,10 stroke-width:2px;
+
+    classDef atrium fill:#ccf,stroke:#333,stroke-width:2px
+    classDef ventricle fill:#ccf,stroke:#333,stroke-width:2px
+    classDef artery fill:#ccf,stroke:#333,stroke-width:2px
+    classDef lungs fill:#cfc,stroke:#333,stroke-width:2px
+    classDef body fill:#eee,stroke:#333,stroke-width:2px
+    classDef node fill:#f9f,stroke:#333,stroke-width:2px
+
+%% Educational Visual Aid
+%% Subject: Science
+%% Topic: Heart Diagram - Image
+%% Grade: 8
+%% Style: artistic
+%% Color Scheme: rainbow
+%% Generated: 2025-07-27 00:04:41
+%% Type: diagram

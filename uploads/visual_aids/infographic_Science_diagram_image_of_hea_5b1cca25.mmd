@@ -1,0 +1,71 @@
+---
+title: Science: Diagram Image Of Heart
+---
+flowchart LR
+    subgraph Grade 8 Heart Infographic
+        direction LR
+
+        A[("The Heart: Your Rainbow-Powered Pumping Station")]:::title --> B(Key Statistics & Facts)
+
+        B --> C{What is the Heart?}
+        C -- Pumping Blood --> D[Circulatory System Overview]
+        C --  How big? --> E{Size of Your Fist!}
+        E --> F[Weighs ~300g (Adult)]
+
+        D --> G[Arteries (Red: Oxygenated)]
+        D --> H[Veins (Blue: Deoxygenated)]
+        D --> I[Capillaries (Tiny Vessels)]
+
+        G --> J[Blood Flows Away from Heart]
+        H --> K[Blood Flows Back to Heart]
+        I --> L[Nutrient & Waste Exchange]
+
+        B --> M{The Four Chambers}
+        M --> N[Right Atrium]
+        M --> O[Right Ventricle]
+        M --> P[Left Atrium]
+        M --> Q[Left Ventricle]
+
+        N -- Receives Deoxygenated Blood --> O
+        O -- Pumps to Lungs --> R[Lungs (Oxygenation)]
+        R --> S[Oxygenated Blood Returns]
+        S --> P
+        P -- Receives Oxygenated Blood --> Q
+        Q -- Pumps Oxygenated Blood to Body --> T[Body (Organs, Muscles, etc.)]
+        T --> N
+
+        B --> U{Heart Valves}
+        U --> V[Tricuspid Valve]
+        U --> W[Pulmonary Valve]
+        U --> X[Mitral Valve]
+        U --> Y[Aortic Valve]
+
+        V --> Z[Between Right Atrium & Ventricle]
+        W --> AA[Between Right Ventricle & Pulmonary Artery]
+        X --> BB[Between Left Atrium & Ventricle]
+        Y --> CC[Between Left Ventricle & Aorta]
+
+        B --> DD(Fun Fact: The Heart Beats ~100,000 Times a Day!)
+
+        classDef title fill:#f9f,stroke:#333,stroke-width:2px,color:#333
+        class A title
+        classDef chamber fill:#ccf,stroke:#333,stroke-width:1px,color:#333
+        class N,O,P,Q chamber
+        classDef valve fill:#cfc,stroke:#333,stroke-width:1px,color:#333
+        class V,W,X,Y valve
+        classDef vessel fill:#fcc,stroke:#333,stroke-width:1px,color:#333
+        class G,H,I vessel
+        classDef info fill:#fff,stroke:#333,stroke-width:1px,color:#333
+        class B,D,E,F,J,K,L,M,R,S,T,U,Z,AA,BB,CC,DD info
+        classDef question fill:#ffc,stroke:#333,stroke-width:1px,color:#333
+        class C question
+    end
+
+%% Educational Visual Aid
+%% Subject: Science
+%% Topic: Diagram Image Of Heart
+%% Grade: 8
+%% Style: artistic
+%% Color Scheme: rainbow
+%% Generated: 2025-07-27 00:18:04
+%% Type: infographic
